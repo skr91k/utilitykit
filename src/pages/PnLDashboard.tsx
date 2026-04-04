@@ -3,6 +3,18 @@ import type { PnLData } from '../types';
 import { DATA_URL, trackIPData } from '../utils/firebase';
 import { FiscalYear } from '../components/FiscalYear';
 
+const PASSCODE = '676510';
+const PASSCODE_STORAGE_KEY = 'pnl-passcode-verified';
+
+// Check if passcode was previously entered
+const isPasscodeVerified = (): boolean => {
+  try {
+    return localStorage.getItem(PASSCODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 // Helper to check if title is a valid Calendar Year (e.g., "2024", "2025")
 const isCalendarYear = (title: string): boolean => {
   const year = parseInt(title, 10);
@@ -34,6 +46,27 @@ export const PnLDashboard = () => {
   const [useFullFormat, setUseFullFormat] = useState(false);
   const [mobileDesktopView, setMobileDesktopView] = useState(false);
   const [showFY, setShowFY] = useState(loadYearMode); // false = CY, true = FY
+  const [isUnlocked, setIsUnlocked] = useState(isPasscodeVerified);
+  const [passcode, setPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
+
+  const handlePasscodeSubmit = () => {
+    if (passcode === PASSCODE) {
+      localStorage.setItem(PASSCODE_STORAGE_KEY, 'true');
+      setIsUnlocked(true);
+      setPasscodeError(false);
+    } else {
+      setPasscodeError(true);
+      setPasscode('');
+    }
+  };
+
+  const handlePasscodeChange = (value: string) => {
+    // Only allow digits and max 6 characters
+    const cleaned = value.replace(/\D/g, '').slice(0, 6);
+    setPasscode(cleaned);
+    setPasscodeError(false);
+  };
 
   // Save year mode to localStorage when it changes
   useEffect(() => {
@@ -92,6 +125,41 @@ export const PnLDashboard = () => {
   }, [mobileDesktopView]);
 
 
+
+  // Passcode screen
+  if (!isUnlocked) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#667eea] to-[#764ba2] dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-sm">
+          <h2 className="text-2xl font-bold text-center text-gray-800 dark:text-white mb-6">
+            Enter Passcode
+          </h2>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={passcode}
+            onChange={(e) => handlePasscodeChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && passcode.length === 6 && handlePasscodeSubmit()}
+            placeholder="••••••"
+            className="w-full text-center text-3xl tracking-[0.5em] py-4 px-4 border-2 border-gray-300 dark:border-gray-600 rounded-xl focus:border-[#667eea] focus:outline-none bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-white placeholder-gray-400"
+            autoFocus
+          />
+          {passcodeError && (
+            <p className="text-red-500 text-center mt-3 font-medium">Wrong code</p>
+          )}
+          <button
+            onClick={handlePasscodeSubmit}
+            disabled={passcode.length !== 6}
+            className="w-full mt-6 py-3 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+          >
+            Submit
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#667eea] to-[#764ba2] dark:from-gray-900 dark:to-gray-800 p-0 md:p-5 transition-colors duration-300">
