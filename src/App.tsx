@@ -9,6 +9,7 @@ import { EpochConverter } from './pages/EpochConverter'
 import { SQLiteViewer } from './pages/SQLiteViewer'
 import { StringConverts } from './pages/StringConverts'
 import { PrayerTime } from './pages/PrayerTime'
+import { WorkoutManager } from './pages/WorkoutManager'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/sqlite" element={<SQLiteViewer />} />
         <Route path="/string" element={<StringConverts />} />
         <Route path="/prayer" element={<PrayerTime />} />
+        <Route path="/workout" element={<WorkoutManager />} />
       </Routes>
     </BrowserRouter>
   )
