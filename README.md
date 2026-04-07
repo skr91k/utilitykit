@@ -18,12 +18,15 @@ npm run build && firebase deploy --only hosting
 
 | Page | Path | Description |
 |------|------|-------------|
-| Home | `/` | Landing page with searchable utility grid |
-| Counter | `/counter` | Digital tally counter with customizable cooldown and persistent count |
-| P&L Dashboard | `/pl` | Profit & Loss dashboard with charts |
-| QR Code Generator | `/qr` | Generate and download QR codes for URLs, text, WiFi |
-| Encryption Tool | `/encrypt` | Encrypt/decrypt text using AES, DES, Triple DES, Rabbit |
-| Epoch Converter | `/epoch` | Convert Unix timestamps to dates and vice versa |
-| SQLite Viewer | `/sqlite` | Browse SQLite databases and run SQL queries in-browser |
-| String Tools | `/string` | Base64, URL encode, HTML entities, MD5/SHA hashes |
-| Prayer Times | `/prayer` | Islamic prayer times with iqama countdown and monthly calendar |
+| 🏠 Home | `/` | Landing page with searchable utility grid |
+| 🔢 Counter | `/counter` | Digital tally counter with customizable cooldown and persistent count |
+| 📈 P&L Dashboard | `/pl` | Profit & Loss dashboard with charts |
+| 🔳 QR Code Generator | `/qr` | Generate and download QR codes for URLs, text, WiFi |
+| 🔐 Encryption Tool | `/encrypt` | Encrypt/decrypt text using AES, DES, Triple DES, Rabbit |
+| ⏳ Epoch Converter | `/epoch` | Convert Unix timestamps to dates and vice versa |
+| 🗄️ SQLite Viewer | `/sqlite` | Browse SQLite databases and run SQL queries in-browser |
+| 🔤 String Tools | `/string` | Base64, URL encode, HTML entities, MD5/SHA hashes |
+| 🕌 Prayer Times | `/prayer` | Islamic prayer times with iqama countdown and monthly calendar |
+| 💪 Workout Manager | `/workout` | Track reps, steps & rest timer |
+| 📺 TV Channels | `https://tv1.web.app/` | Watch Live TV Channels |
+| 📚 Islamic Books | `https://islamicbooks2.web.app/` | Read Islamic Books Online |
