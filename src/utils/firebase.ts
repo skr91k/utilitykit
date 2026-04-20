@@ -1,12 +1,49 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, push, set, get } from 'firebase/database';
-
-const firebaseConfig = {
-  databaseURL: "https://bhavpc-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import type { User } from 'firebase/auth';
+import { firebaseConfig } from './firebaseConfig';
 
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+
+export const signInWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error('Google sign-in error:', error);
+    throw error;
+  }
+};
+
+export const logOut = async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error('Sign-out error:', error);
+    throw error;
+  }
+};
+
+export const signInAnonymous = async () => {
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error('Anonymous sign-in error:', error);
+    throw error;
+  }
+};
+
+export const onAuthChange = (callback: (user: User | null) => void) => {
+  return onAuthStateChanged(auth, callback);
+};
+
+export { auth };
+export type { User };
 
 
 export const DATA_URL = 'https://bhavpc-default-rtdb.asia-southeast1.firebasedatabase.app/pnlsudokutrader.json';
