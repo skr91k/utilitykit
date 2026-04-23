@@ -2,24 +2,93 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only access their own data
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user has email (not anonymous)
+    function hasEmail() {
+      return request.auth.token.email != null;
+    }
+
+    // Helper function to check if user is the support admin
+    // IMPORTANT: Replace 'SUPPORT_ADMIN_UID' with your actual support account UID
+    function isSupportAdmin() {
+      return request.auth.uid == 'vka12e2umlZS89BObKGl5hpthej2';
+    }
+
+    // Helper function to check if user owns the resource
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // ========================================
+    // CHAT RULES
+    // ========================================
+
+    // Chat Rooms Collection
+    match /chatRooms/{chatRoomId} {
+      // Users can read their own chat room, support can read all
+      allow read: if isAuthenticated() && hasEmail() &&
+                    (isOwner(chatRoomId) || isSupportAdmin());
+
+      // Users can create their own chat room
+      allow create: if isAuthenticated() && hasEmail() && isOwner(chatRoomId);
+
+      // Users can update their own chat room (for lastMessage updates)
+      // Support can also update any room
+      allow update: if isAuthenticated() && hasEmail() &&
+                      (isOwner(chatRoomId) || isSupportAdmin());
+
+      // Only support admin can delete chat rooms
+      allow delete: if isSupportAdmin();
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Users can read messages in their own chat room
+        // Support can read all messages
+        allow read: if isAuthenticated() && hasEmail() &&
+                      (isOwner(chatRoomId) || isSupportAdmin());
+
+        // Users can create messages in their own chat room
+        // Support can create messages in any chat room (to reply)
+        allow create: if isAuthenticated() && hasEmail() &&
+                        (isOwner(chatRoomId) || isSupportAdmin());
+
+        // Allow updating message (for read status)
+        allow update: if isAuthenticated() && hasEmail() &&
+                        (isOwner(chatRoomId) || isSupportAdmin()) &&
+                        // Only allow updating the 'read' field
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+        // Only support admin can delete messages
+        allow delete: if isSupportAdmin();
+      }
+    }
+
+    // ========================================
+    // USER DATA RULES (Counter/Tasks)
+    // ========================================
+
+    // Users collection - each user can only access their own data
     match /users/{userId} {
-      // User must be authenticated and can only access their own user document
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAuthenticated() && isOwner(userId);
 
       // Counter tasks collection
       match /counterTasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && isOwner(userId);
 
         // Task progress subcollection
         match /progress/{date} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read, write: if isAuthenticated() && isOwner(userId);
         }
       }
 
       // Default counter collection (for Quick Count task)
       match /defaultCounter/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isAuthenticated() && isOwner(userId);
       }
     }
 

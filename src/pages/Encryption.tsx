@@ -7,6 +7,16 @@ declare global {
   }
 }
 
+const algorithms = [
+  { id: 'aes', name: 'AES' },
+  { id: 'des', name: 'DES' },
+  { id: 'rc4', name: 'RC4' },
+  { id: 'rabbit', name: 'Rabbit' },
+  { id: 'tripledes', name: 'Triple DES' },
+]
+
+type ResultItem = { id: string; name: string; result: string; success: boolean }
+
 export function Encryption() {
   useSEO({
     title: 'Text Encryption & Decryption',
@@ -15,10 +25,11 @@ export function Encryption() {
   });
 
   const [operation, setOperation] = useState<'encrypt' | 'decrypt'>('encrypt')
-  const [algorithm, setAlgorithm] = useState('aes')
   const [secret, setSecret] = useState('')
-  const [input, setInput] = useState('')
-  const [result, setResult] = useState('Result will appear here')
+  const [encryptInput, setEncryptInput] = useState('')
+  const [decryptInput, setDecryptInput] = useState('')
+  const [encryptResults, setEncryptResults] = useState<ResultItem[]>([])
+  const [decryptResults, setDecryptResults] = useState<ResultItem[]>([])
   const [alert, setAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   useEffect(() => {
@@ -60,26 +71,44 @@ export function Encryption() {
       default: throw new Error('Unknown algorithm')
     }
     const decrypted = bytes.toString(CryptoJS.enc.Utf8)
-    if (!decrypted) throw new Error('Invalid key or corrupt ciphertext')
+    if (!decrypted) throw new Error('Failed')
     return decrypted
   }
 
   const process = () => {
+    const input = operation === 'encrypt' ? encryptInput : decryptInput
     if (!secret || !input) {
       showAlert('Please provide both a secret key and input text', 'error')
       return
     }
-    try {
-      const res = operation === 'encrypt' ? encrypt(algorithm, input, secret) : decrypt(algorithm, input, secret)
-      setResult(res)
-      showAlert(`Text ${operation}ed successfully!`, 'success')
-    } catch (error: any) {
-      showAlert(`Error: ${error.message}`, 'error')
+
+    const newResults: ResultItem[] = []
+
+    for (const algo of algorithms) {
+      try {
+        const result = operation === 'encrypt'
+          ? encrypt(algo.id, input, secret)
+          : decrypt(algo.id, input, secret)
+        newResults.push({ id: algo.id, name: algo.name, result, success: true })
+      } catch {
+        newResults.push({ id: algo.id, name: algo.name, result: 'Failed to decrypt', success: false })
+      }
     }
+
+    // Sort: successful first, failed last
+    newResults.sort((a, b) => (b.success ? 1 : 0) - (a.success ? 1 : 0))
+
+    if (operation === 'encrypt') {
+      setEncryptResults(newResults)
+    } else {
+      setDecryptResults(newResults)
+    }
+    const successCount = newResults.filter(r => r.success).length
+    showAlert(`${operation === 'encrypt' ? 'Encrypted' : 'Decrypted'} with ${successCount}/${algorithms.length} algorithms`, 'success')
   }
 
-  const copyResult = () => {
-    navigator.clipboard.writeText(result).then(() => showAlert('Copied to clipboard!', 'success'))
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => showAlert('Copied to clipboard!', 'success'))
   }
 
   return (
@@ -109,21 +138,6 @@ export function Encryption() {
         )}
 
         <div className="mb-6">
-          <label className="block mb-2 text-[#00bfff]">Encryption Algorithm</label>
-          <select
-            value={algorithm}
-            onChange={(e) => setAlgorithm(e.target.value)}
-            className="w-full p-3 rounded-md border border-[#333] bg-[#121212] text-[#f0f0f0]"
-          >
-            <option value="aes">AES (Advanced Encryption Standard)</option>
-            <option value="des">DES (Data Encryption Standard)</option>
-            <option value="rc4">RC4 (Rivest Cipher 4)</option>
-            <option value="rabbit">Rabbit</option>
-            <option value="tripledes">Triple DES</option>
-          </select>
-        </div>
-
-        <div className="mb-6">
           <label className="block mb-2 text-[#00bfff]">Secret Key</label>
           <input
             type="password"
@@ -135,11 +149,11 @@ export function Encryption() {
         </div>
 
         <div className="mb-6">
-          <label className="block mb-2 text-[#00bfff]">Input Text</label>
+          <label className="block mb-2 text-[#00bfff]">{operation === 'encrypt' ? 'Text to Encrypt' : 'Ciphertext to Decrypt'}</label>
           <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter text to encrypt/decrypt"
+            value={operation === 'encrypt' ? encryptInput : decryptInput}
+            onChange={(e) => operation === 'encrypt' ? setEncryptInput(e.target.value) : setDecryptInput(e.target.value)}
+            placeholder={operation === 'encrypt' ? 'Enter text to encrypt' : 'Enter ciphertext to decrypt'}
             className="w-full p-3 rounded-md border border-[#333] bg-[#121212] text-[#f0f0f0] min-h-[100px] font-mono resize-y"
           />
         </div>
@@ -151,14 +165,37 @@ export function Encryption() {
           {operation.charAt(0).toUpperCase() + operation.slice(1)}
         </button>
 
-        <div className="mt-6 p-4 rounded-md bg-[#121212] font-mono break-all relative">
-          {result}
-          <button
-            onClick={copyResult}
-            className="absolute top-2 right-2 bg-[#ff1493] text-white border-none rounded px-2 py-1 text-xs cursor-pointer"
-          >
-            Copy
-          </button>
+        <div className="mt-6 space-y-3">
+          {(operation === 'encrypt' ? encryptResults : decryptResults).length === 0 ? (
+            <div className="p-4 rounded-md bg-[#121212] text-gray-400 text-center">
+              Results will appear here
+            </div>
+          ) : (
+            (operation === 'encrypt' ? encryptResults : decryptResults).map((item) => (
+              <div
+                key={item.id}
+                className={`p-4 rounded-md relative ${item.success ? 'bg-[#121212]' : 'bg-[#1a1212] opacity-60'}`}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <span className={`font-semibold ${item.success ? 'text-[#00bfff]' : 'text-red-400'}`}>
+                    {item.name}
+                    {item.success && <span className="ml-2 text-green-400 text-xs">✓</span>}
+                  </span>
+                  {item.success && (
+                    <button
+                      onClick={() => copyToClipboard(item.result)}
+                      className="bg-[#ff1493] text-white border-none rounded px-2 py-1 text-xs cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
+                <div className={`font-mono text-sm break-all ${item.success ? 'text-gray-300' : 'text-red-300'}`}>
+                  {item.result}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

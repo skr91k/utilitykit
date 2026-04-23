@@ -10,6 +10,8 @@ import { SQLiteViewer } from './pages/SQLiteViewer'
 import { StringConverts } from './pages/StringConverts'
 import { PrayerTime } from './pages/PrayerTime'
 import { WorkoutManager } from './pages/WorkoutManager'
+import { ContactUs } from './pages/ContactUs'
+import { SupportChat } from './pages/SupportChat'
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
         <Route path="/string" element={<StringConverts />} />
         <Route path="/prayer" element={<PrayerTime />} />
         <Route path="/workout" element={<WorkoutManager />} />
+        <Route path="/contactus" element={<ContactUs />} />
+        <Route path="/support" element={<SupportChat />} />
       </Routes>
     </BrowserRouter>
   )

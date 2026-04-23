@@ -15,7 +15,9 @@
       "Bash(git remote set-url:*)",
       "Bash(git push:*)",
       "Bash(git commit:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npm run dev:*)",
+      "Bash(git check-ignore:*)"
     ],
     "additionalDirectories": [
       "/Users/shakir/PROJECTS/SHAKIR_PROJECTS/bhavHTML/src/pages"

@@ -89,32 +89,66 @@
   margin-top: 10px;
 }
 
-@media (prefers-color-scheme: light) {
-  .utility-link {
-    background: #f0f0f0;
-  }
-
-  .utility-name {
-    color: #213547;
-  }
-
-  .search-input {
-    background: #f8f9fa;
-    border-color: #ddd;
-    color: #213547;
-  }
-  
-  .search-input::placeholder {
-    color: #999;
-  }
-
-  .no-results {
-    background: #f8f9fa;
-  }
+.auth-section {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
 
-@media (prefers-color-scheme: light) and (hover: hover) {
-  .utility-link:hover {
-    background: #e0e0e0;
-  }
+.auth-loading {
+  color: #888;
 }
+
+.auth-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.auth-name {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.auth-btn {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.login-btn {
+  background: #1a1a1a;
+  color: #fff;
+  border: 1px solid #333;
+}
+
+.login-btn:hover {
+  background: #2a2a2a;
+  border-color: #646cff;
+}
+
+.logout-btn {
+  background: #333;
+  color: #fff;
+}
+
+.logout-btn:hover {
+  background: #ff4757;
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 8px;
+}
+
