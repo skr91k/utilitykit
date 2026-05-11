@@ -102,6 +102,24 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isSupportAdmin();
     }
 
+    // ========================================
+    // SPLIT EXPENSE - Public read/write, no login required
+    // ========================================
+
+    match /splitBooks/{bookId} {
+      allow read, write: if true;
+
+      match /expenses/{expenseId} {
+        allow read, write: if true;
+      }
+
+      // Audit log: anyone can read and create, but cannot update or delete
+      match /auditLog/{logId} {
+        allow read, create: if true;
+        allow update, delete: if false;
+      }
+    }
+
     // Deny all other access by default
     match /{document=**} {
       allow read, write: if false;

@@ -12,6 +12,7 @@ import { PrayerTime } from './pages/PrayerTime'
 import { WorkoutManager } from './pages/WorkoutManager'
 import { ContactUs } from './pages/ContactUs'
 import { SupportChat } from './pages/SupportChat'
+import { SplitExpense } from './pages/SplitExpense'
 
 function App() {
   return (
@@ -30,6 +31,8 @@ function App() {
         <Route path="/workout" element={<WorkoutManager />} />
         <Route path="/contactus" element={<ContactUs />} />
         <Route path="/support" element={<SupportChat />} />
+        <Route path="/split" element={<SplitExpense />} />
+        <Route path="/split/:bookId" element={<SplitExpense />} />
       </Routes>
     </BrowserRouter>
   )
