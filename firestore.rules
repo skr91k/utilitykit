@@ -120,6 +120,38 @@ service cloud.firestore {
       }
     }
 
+    // ========================================
+    // CRICKET TRACKER - Public read/write via token (no login required)
+    // Security is by obscurity of the random editToken / viewToken
+    // ========================================
+
+    match /cricketSeries/{editToken} {
+      allow read, write: if true;
+
+      match /matches/{matchId} {
+        allow read, write: if true;
+
+        match /innings/{inningsId} {
+          allow read, write: if true;
+
+          match /deliveries/{deliveryId} {
+            allow read, write: if true;
+          }
+        }
+      }
+
+      // Log: anyone can read and create, but cannot modify or delete
+      match /log/{logId} {
+        allow read, create: if true;
+        allow update, delete: if false;
+      }
+    }
+
+    // View-only token lookup index
+    match /cricketViewIndex/{viewToken} {
+      allow read, write: if true;
+    }
+
     // Deny all other access by default
     match /{document=**} {
       allow read, write: if false;

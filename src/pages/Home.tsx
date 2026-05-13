@@ -17,6 +17,7 @@ const utilities = [
   { id: 12, icon: '📚', name: 'Islamic Books', path: 'https://islamicbooks2.web.app/', description: 'Read Islamic Books Online' },
   { id: 13, icon: '📤', name: 'File Share p2p', path: 'http://165.22.213.93:8000/fileshare/', description: 'Share Files across devices p2p /relay' },
   { id: 15, icon: '💸', name: 'Split Expense', path: '/split', description: 'Split bills with friends, shareable via link' },
+  { id: 16, icon: '🏏', name: 'Cricket Tracker', path: '/cricket', description: 'Track series, matches & live ball-by-ball scores' },
   { id: 14, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
   { id: 10, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
 ]

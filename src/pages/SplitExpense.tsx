@@ -146,7 +146,7 @@ function ExpenseForm({
   const totalSplit = Array.from(selected).reduce((s, p) => s + (parseFloat(splits[p]) || 0), 0)
   const expAmt = parseFloat(amount) || 0
   const diff = totalSplit - expAmt
-  const splitOk = Math.abs(diff) < 0.02
+  const splitOk = Math.abs(diff) <= 1
 
   const togglePerson = (p: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n })
@@ -222,7 +222,7 @@ function ExpenseForm({
               onChange={e => setAmount(e.target.value)}
               placeholder="0.00"
               min="0"
-              step="0.01"
+              step="1"
             />
           </div>
 
@@ -314,7 +314,7 @@ function ExpenseForm({
                     disabled={!selected.has(p)}
                     placeholder="0.00"
                     min="0"
-                    step="0.01"
+                    step="1"
                     style={{
                       ...inp,
                       width: 90,
@@ -330,9 +330,9 @@ function ExpenseForm({
             </div>
 
             {selected.size > 0 && expAmt > 0 && (
-              <div style={{ marginTop: 6, textAlign: 'right', fontSize: '0.8rem', fontWeight: 600, color: splitOk ? c.success : c.danger }}>
+              <div style={{ marginTop: 6, textAlign: 'right', fontSize: '0.8rem', fontWeight: 600, color: Math.abs(diff) < 0.01 ? '#4ade80' : Math.abs(diff) <= 1 ? '#facc15' : '#f87171' }}>
                 Split total: ₹{totalSplit.toFixed(2)} / ₹{expAmt.toFixed(2)}
-                {!splitOk && ` (${diff > 0 ? '+' : ''}${diff.toFixed(2)} off)`}
+                {Math.abs(diff) >= 0.01 && ` (${diff > 0 ? '+' : ''}${diff.toFixed(2)} off)`}
               </div>
             )}
           </div>
@@ -348,11 +348,11 @@ function ExpenseForm({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={saving || !desc.trim() || !expAmt || !paidBy || selected.size === 0}
+            disabled={saving || !desc.trim() || !expAmt || !paidBy || selected.size === 0 || !splitOk}
             style={{
               flex: 1, background: c.accent, border: 'none', color: '#fff', borderRadius: 10,
               padding: '12px', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
-              opacity: (saving || !desc.trim() || !expAmt || !paidBy || selected.size === 0) ? 0.45 : 1,
+              opacity: (saving || !desc.trim() || !expAmt || !paidBy || selected.size === 0 || !splitOk) ? 0.45 : 1,
               transition: 'opacity 0.15s',
             }}
           >
@@ -772,10 +772,10 @@ export function SplitExpense() {
                         <p style={{ margin: '2px 0 8px', fontSize: '0.75rem', color: c.faint }}>{ts(exp.createdAt)}</p>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           <span style={{ background: payerCol.bg, border: `1px solid ${payerCol.border}`, color: payerCol.text, borderRadius: 999, padding: '3px 10px', fontSize: '0.78rem', fontWeight: 600 }}>
-                            💳 {exp.paidBy}
+                            💳 {exp.paidBy} ₹{(exp.splits.find(s => s.personName === exp.paidBy)?.amount ?? 0).toFixed(0)}
                           </span>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {exp.splits.map(s => {
+                            {exp.splits.filter(s => s.personName !== exp.paidBy).map(s => {
                               const sc = personColor(book.persons, s.personName)
                               return (
                                 <span key={s.personName} style={{ background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, borderRadius: 999, padding: '3px 8px', fontSize: '0.75rem' }}>

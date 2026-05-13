@@ -13,6 +13,7 @@ import { WorkoutManager } from './pages/WorkoutManager'
 import { ContactUs } from './pages/ContactUs'
 import { SupportChat } from './pages/SupportChat'
 import { SplitExpense } from './pages/SplitExpense'
+import { CricketTracker } from './pages/CricketTracker'
 
 function App() {
   return (
@@ -33,6 +34,8 @@ function App() {
         <Route path="/support" element={<SupportChat />} />
         <Route path="/split" element={<SplitExpense />} />
         <Route path="/split/:bookId" element={<SplitExpense />} />
+        <Route path="/cricket" element={<CricketTracker />} />
+        <Route path="/cricket/:token" element={<CricketTracker />} />
       </Routes>
     </BrowserRouter>
   )
