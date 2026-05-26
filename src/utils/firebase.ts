@@ -2,10 +2,19 @@ import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, push, set, get } from 'firebase/database';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import type { User } from 'firebase/auth';
+import { getAnalytics, logEvent } from 'firebase/analytics';
 import { firebaseConfig } from './firebaseConfig';
 
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
+export const analytics = getAnalytics(app);
+
+export const trackPageView = (path: string, title?: string) => {
+  logEvent(analytics, 'page_view', {
+    page_path: path,
+    page_title: title ?? document.title,
+  });
+};
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 

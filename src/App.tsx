@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { RouteTracker } from './components/RouteTracker'
 import Home from './pages/Home'
 import Counter from './pages/Counter'
 import { PnLDashboard } from './pages/PnLDashboard'
@@ -18,6 +19,7 @@ import { CricketTracker } from './pages/CricketTracker'
 function App() {
   return (
     <BrowserRouter>
+      <RouteTracker />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/counter" element={<Counter />} />
