@@ -77,7 +77,7 @@ export function WorkoutManager() {
   const soundPlayedRef = useRef(false)
 
   useEffect(() => {
-    let interval: number
+    let interval: ReturnType<typeof setInterval>
     if (phase === 'resting') {
       soundPlayedRef.current = false
       const coolDuration = activeWorkout?.coolTime || 30

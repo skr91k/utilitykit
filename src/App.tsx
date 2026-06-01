@@ -15,6 +15,8 @@ import { ContactUs } from './pages/ContactUs'
 import { SupportChat } from './pages/SupportChat'
 import { SplitExpense } from './pages/SplitExpense'
 import { CricketTracker } from './pages/CricketTracker'
+import { JWTDecoder } from './pages/JWTDecoder'
+import { BhavUnpacker } from './pages/BhavUnpacker'
 
 function App() {
   return (
@@ -38,6 +40,8 @@ function App() {
         <Route path="/split/:bookId" element={<SplitExpense />} />
         <Route path="/cricket" element={<CricketTracker />} />
         <Route path="/cricket/:token" element={<CricketTracker />} />
+        <Route path="/jwt" element={<JWTDecoder />} />
+        <Route path="/priceUnpacker" element={<BhavUnpacker />} />
       </Routes>
     </BrowserRouter>
   )

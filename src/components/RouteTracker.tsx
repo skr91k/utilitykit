@@ -18,6 +18,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/support': 'Support Chat',
   '/split': 'Split Expense',
   '/cricket': 'Cricket Tracker',
+  '/jwt': 'JWT Decoder',
 };
 
 function getPageName(pathname: string): string {
