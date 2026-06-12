@@ -1,18 +1,14 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
 import JSZip from 'jszip'
 import { Zip, ZipDeflate } from 'fflate'
+import { parquetReadObjects, parquetMetadataAsync, parquetSchema } from 'hyparquet'
 import { useSEO } from '../utils/useSEO'
-import { createChart, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
+import { createChart, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode, TickMarkType, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
 
-// ---- Embeddable Python script (downloadable / copyable from the page) ----
-const PYTHON_SCRIPT = `#!/usr/bin/env python3
-"""
-Price Unpacker — decode bit-packed OHLC binary zip entries.
-Port of BahvRepo4.byteArrayToresponseMC (Kotlin).
+// ---- Python script is served from /price_unpacker.py (public/) ----
+const SCRIPT_URL = '/price_unpacker.py'
 
-Usage:
-    python price_unpacker.py [zip_file]
-"""
+/*
 
 import zipfile, json, os, sys, math
 
@@ -81,76 +77,84 @@ def decode_entry(data: bytes) -> dict:
     pos     = 0
     sym_len = data[pos]; pos += 1
     symbol  = data[pos:pos+sym_len].decode(); pos += sym_len
-    tfs     = read_u32(data, pos); pos += 4          # timeframe seconds
+    tfs     = read_u32(data, pos); pos += 4
 
     if tfs == 86400:
         cnt = read_u32(data, pos); pos += 4
         sc, gdc, consumed = _rls(data, pos, cnt); pos += consumed
         timestamps = (sc * gdc).tolist() if HAS_NP else [s * gdc for s in sc]
     else:
-        ts  = read_u32(data, pos); pos += 4           # start epoch
-        te  = read_u32(data, pos); pos += 4           # end epoch
+        ts  = read_u32(data, pos); pos += 4
+        te  = read_u32(data, pos); pos += 4
         cnt = round((te - ts) / tfs) + 1
         timestamps = [ts + i * tfs for i in range(cnt)]
 
-    n          = len(timestamps)
-    power      = read_u32(data, pos); pos += 4
-    ohlc_gdc   = read_u32(data, pos); pos += 4
-    ohlc_start = read_u32(data, pos); pos += 4
-    ohlc_off   = read_u32(data, pos); pos += 4
-    ohlc_bits  = data[pos];           pos += 1
-    ohlc_blen  = math.ceil(n * 4 * ohlc_bits / 8)
-    ohlc_sh    = bit_unpack(data, pos, n*4, ohlc_bits); pos += ohlc_blen
+    n = len(timestamps)
+    t = timestamps
+    o, h, l, c, v, oi, iv = [], [], [], [], [], [], []
 
-    scale = 10 ** power
-    if HAS_NP:
-        arr    = ohlc_sh.astype(np.int64) - ohlc_off
-        arr[0] = ohlc_start
-        osc    = np.cumsum(arr)
-        f      = ohlc_gdc / float(scale)
-        ov, cv = osc[0::4] * f, osc[3::4] * f
-        p1, p2 = osc[1::4] * f, osc[2::4] * f
-        bull   = cv > ov
-        t = timestamps
-        o = ov.tolist(); c = cv.tolist()
-        h = np.where(bull, p2, p1).tolist()
-        l = np.where(bull, p1, p2).tolist()
-    else:
-        osc    = [0] * (n * 4); osc[0] = ohlc_start
-        for i in range(1, n * 4):
-            osc[i] = osc[i - 1] + (ohlc_sh[i] - ohlc_off)
-        t, o, h, l, c = [], [], [], [], []
-        for i in range(n):
-            t.append(timestamps[i])
-            ov = osc[i*4+0] * ohlc_gdc / scale
-            cv = osc[i*4+3] * ohlc_gdc / scale
-            p1 = osc[i*4+1] * ohlc_gdc / scale
-            p2 = osc[i*4+2] * ohlc_gdc / scale
-            o.append(ov); c.append(cv)
-            if cv > ov: l.append(p1); h.append(p2)
-            else:       h.append(p1); l.append(p2)
-
-    v, oi = [], []
+    # 0=end  1=close-only  2=ohlc  3=volume  4=oi  5=iv
     while pos < len(data):
         tag = data[pos]; pos += 1
-        if tag == 0: break
-        if tag == 1:
+        if tag == 0:
+            break
+        elif tag == 1:
+            power = read_u32(data, pos); pos += 4
+            scale = 10 ** power
             sc, gdc, consumed = _rls(data, pos, n); pos += consumed
-            v  = (sc * gdc).tolist() if HAS_NP else [s * gdc for s in sc]
+            if HAS_NP:
+                vals = (sc * gdc / scale).tolist()
+            else:
+                vals = [s * gdc / scale for s in sc]
+            o = vals; h = list(vals); l = list(vals); c = list(vals)
         elif tag == 2:
+            power = read_u32(data, pos); pos += 4
+            scale = 10 ** power
+            sc, gdc, consumed = _rls(data, pos, n * 4); pos += consumed
+            if HAS_NP:
+                f      = gdc / float(scale)
+                ov, cv = (sc[0::4] * f).tolist(), (sc[3::4] * f).tolist()
+                p1, p2 = (sc[1::4] * f).tolist(), (sc[2::4] * f).tolist()
+                bull   = [cv[i] > ov[i] for i in range(n)]
+                o = ov; c = cv
+                h = [p2[i] if bull[i] else p1[i] for i in range(n)]
+                l = [p1[i] if bull[i] else p2[i] for i in range(n)]
+            else:
+                for i in range(n):
+                    ov = sc[i*4+0] * gdc / scale
+                    cv = sc[i*4+3] * gdc / scale
+                    p1 = sc[i*4+1] * gdc / scale
+                    p2 = sc[i*4+2] * gdc / scale
+                    o.append(ov); c.append(cv)
+                    if cv > ov: l.append(p1); h.append(p2)
+                    else:       h.append(p1); l.append(p2)
+        elif tag == 3:
+            sc, gdc, consumed = _rls(data, pos, n); pos += consumed
+            v = (sc * gdc).tolist() if HAS_NP else [s * gdc for s in sc]
+        elif tag == 4:
             sc, gdc, consumed = _rls(data, pos, n); pos += consumed
             oi = (sc * gdc).tolist() if HAS_NP else [s * gdc for s in sc]
+        elif tag == 5:
+            power = read_u32(data, pos); pos += 4
+            scale = 10 ** power
+            sc, gdc, consumed = _rls(data, pos, n); pos += consumed
+            if HAS_NP:
+                iv = (sc * gdc / scale).tolist()
+            else:
+                iv = [s * gdc / scale for s in sc]
 
     return {'symbol': symbol, 'timeframeSec': tfs,
-            't': t, 'o': o, 'h': h, 'l': l, 'c': c, 'v': v, 'oi': oi}
+            't': t, 'o': o, 'h': h, 'l': l, 'c': c, 'v': v, 'oi': oi, 'iv': iv}
 
 
 def to_csv(mc: dict) -> str:
     has_v  = len(mc['v']) > 0
     has_oi = len(mc['oi']) > 0
+    has_iv = len(mc.get('iv', [])) > 0
     cols   = ['time', 'open', 'high', 'low', 'close']
     if has_v:  cols.append('volume')
     if has_oi: cols.append('oi')
+    if has_iv: cols.append('iv')
     rows = [','.join(cols)]
     for i in range(len(mc['t'])):
         row = [str(mc['t'][i]),
@@ -158,6 +162,7 @@ def to_csv(mc: dict) -> str:
                f"{mc['l'][i]:.2f}", f"{mc['c'][i]:.2f}"]
         if has_v:  row.append(str(int(mc['v'][i])))
         if has_oi: row.append(str(int(mc['oi'][i])))
+        if has_iv: row.append(f"{mc['iv'][i]:.4f}")
         rows.append(','.join(row))
     return '\\n'.join(rows)
 
@@ -220,15 +225,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-`
-
-function downloadPythonScript() {
-  const blob = new Blob([PYTHON_SCRIPT], { type: 'text/x-python' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = 'price_unpacker.py'; a.click()
-  URL.revokeObjectURL(url)
-}
+*/
 
 // ---- Binary decoder — exact port of Kotlin BahvRepo4.byteArrayToresponseMC ----
 
@@ -242,6 +239,7 @@ interface ResponseMC {
   c: number[]
   v: number[]
   oi: number[]
+  iv: number[]
 }
 
 function readU32(data: Uint8Array, offset: number): number {
@@ -298,43 +296,51 @@ function decodeEntry(data: Uint8Array): ResponseMC {
   }
   const n = timestamps.length
 
-  const power = readU32(data, pos); pos += 4
-  const ohlcGdc = readU32(data, pos); pos += 4
-  const ohlcStart = readU32(data, pos); pos += 4
-  const ohlcOffset = readU32(data, pos); pos += 4
-  const ohlcBits = data[pos++]
-  const ohlcBytes = Math.ceil(n * 4 * ohlcBits / 8)
-  const ohlcShifted = bitUnpack(data, pos, n * 4, ohlcBits); pos += ohlcBytes
+  const result: ResponseMC = { symbol, timeframeSec, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
+  for (let i = 0; i < n; i++) result.t.push(timestamps[i])
 
-  const scale = Math.pow(10, power)
-  const ohlcScaled = new Array<number>(n * 4)
-  ohlcScaled[0] = ohlcStart
-  for (let i = 1; i < n * 4; i++) ohlcScaled[i] = ohlcScaled[i - 1] + (ohlcShifted[i] - ohlcOffset)
-
-  const result: ResponseMC = { symbol, timeframeSec, t: [], o: [], h: [], l: [], c: [], v: [], oi: [] }
-  for (let i = 0; i < n; i++) {
-    result.t.push(timestamps[i])
-    const o = ohlcScaled[i * 4 + 0] * ohlcGdc / scale
-    const c = ohlcScaled[i * 4 + 3] * ohlcGdc / scale
-    const p1 = ohlcScaled[i * 4 + 1] * ohlcGdc / scale
-    const p2 = ohlcScaled[i * 4 + 2] * ohlcGdc / scale
-    result.o.push(o)
-    if (c > o) { result.l.push(p1); result.h.push(p2) }
-    else { result.h.push(p1); result.l.push(p2) }
-    result.c.push(c)
-  }
-
+  // 0=end  1=close-only  2=ohlc  3=volume  4=oi  5=iv
   while (pos < data.length) {
     const id = data[pos++]
     if (id === 0) break
     if (id === 1) {
+      const power = readU32(data, pos); pos += 4
+      const scale = Math.pow(10, power)
+      const { scaled, gdc, bytesConsumed } = readLongSection(data, pos, n)
+      pos += bytesConsumed
+      for (let i = 0; i < n; i++) {
+        const c = scaled[i] * gdc / scale
+        result.o.push(c); result.h.push(c); result.l.push(c); result.c.push(c)
+      }
+    } else if (id === 2) {
+      const power = readU32(data, pos); pos += 4
+      const scale = Math.pow(10, power)
+      const { scaled, gdc, bytesConsumed } = readLongSection(data, pos, n * 4)
+      pos += bytesConsumed
+      for (let i = 0; i < n; i++) {
+        const o = scaled[i * 4 + 0] * gdc / scale
+        const c = scaled[i * 4 + 3] * gdc / scale
+        const p1 = scaled[i * 4 + 1] * gdc / scale
+        const p2 = scaled[i * 4 + 2] * gdc / scale
+        result.o.push(o)
+        if (c > o) { result.l.push(p1); result.h.push(p2) }
+        else { result.h.push(p1); result.l.push(p2) }
+        result.c.push(c)
+      }
+    } else if (id === 3) {
       const { scaled, gdc, bytesConsumed } = readLongSection(data, pos, n)
       pos += bytesConsumed
       for (let i = 0; i < n; i++) result.v.push(scaled[i] * gdc)
-    } else if (id === 2) {
+    } else if (id === 4) {
       const { scaled, gdc, bytesConsumed } = readLongSection(data, pos, n)
       pos += bytesConsumed
       for (let i = 0; i < n; i++) result.oi.push(scaled[i] * gdc)
+    } else if (id === 5) {
+      const power = readU32(data, pos); pos += 4
+      const scale = Math.pow(10, power)
+      const { scaled, gdc, bytesConsumed } = readLongSection(data, pos, n)
+      pos += bytesConsumed
+      for (let i = 0; i < n; i++) result.iv.push(scaled[i] * gdc / scale)
     }
   }
 
@@ -344,10 +350,13 @@ function decodeEntry(data: Uint8Array): ResponseMC {
 function toCSV(mc: ResponseMC): string {
   const hasV = mc.v.length > 0
   const hasOi = mc.oi.length > 0
-  const cols = ['time', 'open', 'high', 'low', 'close', ...(hasV ? ['volume'] : []), ...(hasOi ? ['oi'] : [])]
+  const hasIv = mc.iv.length > 0
+  const cols = ['time', 'open', 'high', 'low', 'close',
+    ...(hasV ? ['volume'] : []), ...(hasOi ? ['oi'] : []), ...(hasIv ? ['iv'] : [])]
   const rows = mc.t.map((t, i) =>
     [t, mc.o[i].toFixed(2), mc.h[i].toFixed(2), mc.l[i].toFixed(2), mc.c[i].toFixed(2),
-      ...(hasV ? [mc.v[i]] : []), ...(hasOi ? [mc.oi[i]] : [])].join(',')
+      ...(hasV ? [mc.v[i]] : []), ...(hasOi ? [mc.oi[i]] : []),
+      ...(hasIv ? [mc.iv[i].toFixed(4)] : [])].join(',')
   )
   return [cols.join(','), ...rows].join('\n')
 }
@@ -363,6 +372,7 @@ function sanitizeMC(raw: Partial<ResponseMC>, entryName: string): ResponseMC {
     c: Array.isArray(raw.c) ? raw.c : [],
     v: Array.isArray(raw.v) ? raw.v : [],
     oi: Array.isArray(raw.oi) ? raw.oi : [],
+    iv: Array.isArray(raw.iv) ? raw.iv : [],
   }
 }
 
@@ -372,7 +382,7 @@ function parseJSONEntry(text: string, entryName: string): ResponseMC {
 
   // Format: { candles: [[t,o,h,l,c,v?,oi?], ...], ... }
   if (Array.isArray(parsed.candles)) {
-    const mc: ResponseMC = { symbol: name, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [] }
+    const mc: ResponseMC = { symbol: name, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
     const hasOi = parsed.candles.length > 0 && parsed.candles[0].length >= 7
     for (const row of parsed.candles as number[][]) {
       mc.t.push(row[0]); mc.o.push(row[1]); mc.h.push(row[2])
@@ -385,13 +395,37 @@ function parseJSONEntry(text: string, entryName: string): ResponseMC {
 
   // Format: { result: [{time,open,high,low,close,volume,oi?}, ...], ... }
   if (Array.isArray(parsed.result) && parsed.result.length > 0 && 'time' in parsed.result[0]) {
-    const mc: ResponseMC = { symbol: name, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [] }
+    const mc: ResponseMC = { symbol: name, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
     const rows = [...parsed.result].sort((a: Record<string, number>, b: Record<string, number>) => a.time - b.time)
     const hasOi = 'oi' in rows[0]
     for (const row of rows as Record<string, number>[]) {
       mc.t.push(row.time); mc.o.push(row.open); mc.h.push(row.high)
       mc.l.push(row.low); mc.c.push(row.close); mc.v.push(row.volume ?? 0)
       if (hasOi) mc.oi.push(row.oi ?? 0)
+    }
+    if (mc.t.length > 1) mc.timeframeSec = mc.t[1] - mc.t[0]
+    return mc
+  }
+
+  // Format: { Success: [{datetime (IST string), open, high, low, close, volume, open_interest?, stock_code, ...}] }
+  if (Array.isArray(parsed.Success) && parsed.Success.length > 0 && 'datetime' in parsed.Success[0]) {
+    const arr = [...parsed.Success as Record<string, unknown>[]].sort(
+      (a, b) => String(a.datetime).localeCompare(String(b.datetime))
+    )
+    const first = arr[0]
+    const sym = String(first.stock_code ?? name)
+    const hasOi = 'open_interest' in first
+    const mc: ResponseMC = { symbol: sym, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
+    for (const row of arr) {
+      const [datePart, timePart = '00:00:00'] = String(row.datetime ?? '').split(' ')
+      const [yr, mo, dy] = datePart.split('-').map(Number)
+      const [hh, mm, ss] = timePart.split(':').map(Number)
+      const utcSec = Math.floor(Date.UTC(yr, mo - 1, dy, hh, mm, ss) / 1000) - IST_OFFSET
+      mc.t.push(utcSec)
+      mc.o.push(Number(row.open ?? 0)); mc.h.push(Number(row.high ?? 0))
+      mc.l.push(Number(row.low  ?? 0)); mc.c.push(Number(row.close ?? 0))
+      mc.v.push(Number(row.volume ?? 0))
+      if (hasOi) mc.oi.push(Number(row.open_interest ?? 0))
     }
     if (mc.t.length > 1) mc.timeframeSec = mc.t[1] - mc.t[0]
     return mc
@@ -406,7 +440,7 @@ function fromCSV(text: string, entryName: string): ResponseMC {
   const headers = lines[0].split(',')
   const hasV  = headers.includes('volume')
   const hasOi = headers.includes('oi')
-  const mc: ResponseMC = { symbol: entryName.split('/').pop()?.replace(/\.csv$/, '') ?? '', timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [] }
+  const mc: ResponseMC = { symbol: entryName.split('/').pop()?.replace(/\.csv$/, '') ?? '', timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
   for (let i = 1; i < lines.length; i++) {
     const c = lines[i].split(',')
     mc.t.push(Number(c[0])); mc.o.push(Number(c[1])); mc.h.push(Number(c[2]))
@@ -426,6 +460,77 @@ function toJSONPretty(mc: ResponseMC): string {
   return JSON.stringify(mc, null, 2) // pretty — used for view only
 }
 
+function findCol(keys: string[], ...candidates: string[]): string {
+  const lower = keys.map(k => k.toLowerCase())
+  for (const c of candidates) {
+    const idx = lower.indexOf(c.toLowerCase())
+    if (idx !== -1) return keys[idx]
+  }
+  return ''
+}
+
+function bytesToAsyncBuffer(data: Uint8Array) {
+  const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+  return { byteLength: ab.byteLength, slice: (s: number, e?: number) => Promise.resolve(ab.slice(s, e)) }
+}
+
+function fileToAsyncBuffer(file: File) {
+  return { byteLength: file.size, slice: (s: number, e?: number) => file.slice(s, e).arrayBuffer() }
+}
+
+function rowsToMC(rows: Record<string, unknown>[], symName: string): ResponseMC {
+  if (!rows.length) throw new Error('No rows')
+  const keys = Object.keys(rows[0])
+  const tCol  = findCol(keys, 'time', 't', 'timestamp', 'date', 'datetime')
+  const oCol  = findCol(keys, 'open', 'o')
+  const hCol  = findCol(keys, 'high', 'h')
+  const lCol  = findCol(keys, 'low', 'l')
+  const cCol  = findCol(keys, 'close', 'c')
+  const vCol  = findCol(keys, 'volume', 'vol', 'v', 'qty')
+  const oiCol = findCol(keys, 'oi', 'open_interest', 'openinterest')
+  if (!tCol || !oCol || !hCol || !lCol || !cCol)
+    throw new Error(`Parquet missing OHLC columns. Found: ${keys.join(', ')}`)
+  const mc: ResponseMC = { symbol: symName, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
+  for (const row of rows) {
+    const tv = row[tCol]
+    let ts: number
+    if (tv instanceof Date) ts = Math.floor(tv.getTime() / 1000)
+    else if (typeof tv === 'bigint') ts = Number(tv)
+    else ts = Number(tv)
+    mc.t.push(ts)
+    mc.o.push(Number(row[oCol] ?? 0))
+    mc.h.push(Number(row[hCol] ?? 0))
+    mc.l.push(Number(row[lCol] ?? 0))
+    mc.c.push(Number(row[cCol] ?? 0))
+    if (vCol) mc.v.push(Number(row[vCol] ?? 0))
+    if (oiCol) mc.oi.push(Number(row[oiCol] ?? 0))
+  }
+  if (mc.t.length > 1) mc.timeframeSec = mc.t[1] - mc.t[0]
+  return mc
+}
+
+async function fromParquet(data: Uint8Array, entryName: string): Promise<ResponseMC> {
+  const name = entryName.split('/').pop()?.replace(/\.parquet$/i, '') ?? ''
+  const rows = await parquetReadObjects({ file: bytesToAsyncBuffer(data) }) as Record<string, unknown>[]
+  if (!rows.length) throw new Error('Empty parquet file')
+  return rowsToMC(rows, name)
+}
+
+
+const IST_OFFSET = 19800 // UTC+5:30 in seconds
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function fmtIST(ts: number, showTime: boolean, showSec = false): string {
+  const d = new Date((ts + IST_OFFSET) * 1000)
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const mon = MONTHS[d.getUTCMonth()]
+  const yr  = d.getUTCFullYear()
+  if (!showTime) return `${day} ${mon} ${yr}`
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  const ss = String(d.getUTCSeconds()).padStart(2, '0')
+  return showSec ? `${day} ${mon} ${yr}  ${hh}:${mm}:${ss}` : `${day} ${mon} ${yr}  ${hh}:${mm}`
+}
 
 function fmtDuration(sec: number) {
   if (sec < 60) return sec + 's'
@@ -436,7 +541,7 @@ function fmtDuration(sec: number) {
 
 // ---- Folder tree ----
 
-interface EntryState { name: string; zipObj: JSZip.JSZipObject; format: 'binary' | 'json' | 'csv' }
+interface EntryState { name: string; zipObj: JSZip.JSZipObject | null; format: 'binary' | 'json' | 'csv' | 'parquet'; rawData?: Uint8Array }
 
 interface FolderNode {
   name: string
@@ -538,10 +643,15 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
     if (!containerRef.current) return
     const el = containerRef.current
 
+    const intraday = mc.timeframeSec < 86400
+    const showSeconds = mc.timeframeSec < 60
     const chart = createChart(el, {
       layout: {
         background: { type: ColorType.Solid, color: '#0e0e0e' },
         textColor: '#888',
+      },
+      localization: {
+        timeFormatter: (ts: UTCTimestamp) => fmtIST(ts as number, intraday, showSeconds),
       },
       grid: {
         vertLines: { color: '#1a1a1a' },
@@ -557,8 +667,19 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
       },
       timeScale: {
         borderColor: '#2a2a2a',
-        timeVisible: mc.timeframeSec < 86400,
-        secondsVisible: mc.timeframeSec < 60,
+        timeVisible: intraday,
+        secondsVisible: showSeconds,
+        tickMarkFormatter: (time: UTCTimestamp, type: TickMarkType) => {
+          const d = new Date((time as number + IST_OFFSET) * 1000)
+          const hh = String(d.getUTCHours()).padStart(2, '0')
+          const mm = String(d.getUTCMinutes()).padStart(2, '0')
+          const ss = String(d.getUTCSeconds()).padStart(2, '0')
+          if (type === TickMarkType.Year)        return String(d.getUTCFullYear())
+          if (type === TickMarkType.Month)       return MONTHS[d.getUTCMonth()]
+          if (type === TickMarkType.DayOfMonth)  return `${String(d.getUTCDate()).padStart(2,'0')} ${MONTHS[d.getUTCMonth()]}`
+          if (type === TickMarkType.TimeWithSeconds) return `${hh}:${mm}:${ss}`
+          return `${hh}:${mm}`
+        },
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
       handleScale: { axisPressedMouseMove: { time: true, price: true }, mouseWheel: true, pinch: true },
@@ -572,12 +693,11 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
     })
-    candleSeries.setData(
-      mc.t.map((t, i) => ({
-        time: t as UTCTimestamp,
-        open: mc.o[i], high: mc.h[i], low: mc.l[i], close: mc.c[i],
-      }))
-    )
+    const valid = (v: number) => Number.isFinite(v)
+    const candleData = mc.t
+      .map((t, i) => ({ time: t as UTCTimestamp, open: mc.o[i], high: mc.h[i], low: mc.l[i], close: mc.c[i] }))
+      .filter(c => valid(c.time) && valid(c.open) && valid(c.high) && valid(c.low) && valid(c.close) && c.high >= c.low)
+    candleSeries.setData(candleData)
 
     if (mc.v.length > 0 && mc.v.some(v => v > 0)) {
       const volSeries = chart.addSeries(HistogramSeries, {
@@ -587,15 +707,20 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
       })
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
       volSeries.setData(
-        mc.t.map((t, i) => ({
-          time: t as UTCTimestamp,
-          value: mc.v[i],
-          color: mc.c[i] >= mc.o[i] ? '#26a69a55' : '#ef535055',
-        }))
+        mc.t
+          .map((t, i) => ({ time: t as UTCTimestamp, value: mc.v[i], color: mc.c[i] >= mc.o[i] ? '#26a69a55' : '#ef535055' }))
+          .filter(c => valid(c.time) && valid(c.value))
       )
     }
 
     chart.timeScale().fitContent()
+    const n = candleData.length
+    if (n > 500) {
+      chart.timeScale().setVisibleRange({
+        from: candleData[n - 500].time,
+        to: candleData[n - 1].time,
+      })
+    }
 
     const ro = new ResizeObserver(() => {
       chart.resize(el.clientWidth, el.clientHeight, true)
@@ -652,25 +777,32 @@ export function BhavUnpacker() {
   const [copiedScript, setCopiedScript] = useState(false)
 
   const copyPythonScript = () => {
-    navigator.clipboard.writeText(PYTHON_SCRIPT).then(() => {
-      setCopiedScript(true)
-      setTimeout(() => setCopiedScript(false), 2000)
+    fetch(SCRIPT_URL).then(r => r.text()).then(text => {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedScript(true)
+        setTimeout(() => setCopiedScript(false), 2000)
+      })
     })
   }
+  const [loadStatus, setLoadStatus] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const dataCache = useRef<Map<string, Uint8Array>>(new Map())
+  const parquetMCCache = useRef<Map<string, ResponseMC>>(new Map())
+  const parquetFileRef = useRef<File | null>(null)
+  const parquetSymColRef = useRef<string>('')
 
   const loadZip = async (file: File) => {
     setError(null); setEntries([]); setSelected(null); setDecoded(null)
     setFilter(''); setExpanded({}); setShowClearConfirm(false)
-    dataCache.current.clear()
+    dataCache.current.clear(); parquetMCCache.current.clear()
+    parquetFileRef.current = null; parquetSymColRef.current = ''
     setLoading(true)
     try {
       const zip = await JSZip.loadAsync(file)
       const result: EntryState[] = []
       for (const [name, zipObj] of Object.entries(zip.files)) {
         if (!zipObj.dir) {
-            const fmt: EntryState['format'] = name.endsWith('.json') ? 'json' : name.endsWith('.csv') ? 'csv' : 'binary'
+            const fmt: EntryState['format'] = name.endsWith('.json') ? 'json' : name.endsWith('.csv') ? 'csv' : name.endsWith('.parquet') ? 'parquet' : 'binary'
             result.push({ name, zipObj, format: fmt })
           }
       }
@@ -683,8 +815,51 @@ export function BhavUnpacker() {
     }
   }
 
+  const loadParquetFile = async (file: File) => {
+    setError(null); setEntries([]); setSelected(null); setDecoded(null)
+    setFilter(''); setExpanded({}); setShowClearConfirm(false)
+    dataCache.current.clear(); parquetMCCache.current.clear()
+    parquetFileRef.current = file; parquetSymColRef.current = ''
+    setLoading(true); setLoadStatus('Reading metadata…')
+    try {
+      const asyncBuf = fileToAsyncBuffer(file)
+
+      // Step 1: read only footer metadata (a few KB) to discover column names
+      const metadata = await parquetMetadataAsync(asyncBuf)
+      const cols = parquetSchema(metadata).children.map((c: { element: { name: string } }) => c.element.name)
+      const symCol = findCol(cols, 'symbol', 'sym', 'ticker', 'instrument', 'scrip', 'tradingsymbol')
+
+      if (symCol) {
+        parquetSymColRef.current = symCol
+        setLoadStatus('Reading symbol list…')
+        // Step 2: read ONLY the symbol column — hyparquet fetches only that column's bytes
+        const symRows = await parquetReadObjects({ file: asyncBuf, columns: [symCol] }) as Record<string, unknown>[]
+        const symbols = [...new Set(symRows.map(r => String(r[symCol] ?? 'UNKNOWN')))].sort()
+        setEntries(symbols.map(sym => ({ name: sym, zipObj: null, format: 'parquet' as const })))
+      } else {
+        // No symbol column — read full file now and cache as single entry
+        setLoadStatus('Parsing parquet…')
+        const rows = await parquetReadObjects({ file: asyncBuf }) as Record<string, unknown>[]
+        if (!rows.length) throw new Error('Empty parquet file')
+        const baseName = file.name.replace(/\.parquet$/i, '')
+        parquetMCCache.current.set(file.name, rowsToMC(rows, baseName))
+        setEntries([{ name: file.name, zipObj: null, format: 'parquet' }])
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false); setLoadStatus('')
+    }
+  }
+
+  const handleFile = (file: File) => {
+    if (file.name.toLowerCase().endsWith('.parquet')) loadParquetFile(file)
+    else loadZip(file)
+  }
+
   const clearAll = () => {
-    dataCache.current.clear()
+    dataCache.current.clear(); parquetMCCache.current.clear()
+    parquetFileRef.current = null; parquetSymColRef.current = ''
     setEntries([]); setSelected(null); setDecoded(null); setFilter('')
     setExpanded({}); setError(null); setShowClearConfirm(false)
   }
@@ -692,20 +867,40 @@ export function BhavUnpacker() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file) loadZip(file)
+    if (file) handleFile(file)
   }
 
   const loadEntryAsMC = async (entry: EntryState, cache = true): Promise<ResponseMC> => {
     if (entry.format === 'json') {
-      return parseJSONEntry(await entry.zipObj.async('string'), entry.name)
+      return parseJSONEntry(await entry.zipObj!.async('string'), entry.name)
     }
     if (entry.format === 'csv') {
-      const text = await entry.zipObj.async('string')
+      const text = await entry.zipObj!.async('string')
       return fromCSV(text, entry.name)
+    }
+    if (entry.format === 'parquet') {
+      const cached = parquetMCCache.current.get(entry.name)
+      if (cached) return cached
+      // On-demand: re-read from the original File with a per-symbol filter
+      const pFile = parquetFileRef.current
+      const symCol = parquetSymColRef.current
+      if (pFile && symCol) {
+        const asyncBuf = fileToAsyncBuffer(pFile)
+        const rows = await parquetReadObjects({
+          file: asyncBuf,
+          filter: { [symCol]: { $eq: entry.name } },
+        }) as Record<string, unknown>[]
+        const mc = rowsToMC(rows, entry.name)
+        parquetMCCache.current.set(entry.name, mc)
+        return mc
+      }
+      // Fallback for zip-contained parquets
+      const data = entry.rawData ?? await entry.zipObj!.async('uint8array')
+      return fromParquet(data, entry.name)
     }
     let data = dataCache.current.get(entry.name)
     if (!data) {
-      data = await entry.zipObj.async('uint8array')
+      data = await entry.zipObj!.async('uint8array')
       if (cache) dataCache.current.set(entry.name, data)
     }
     return decodeEntry(data)
@@ -830,12 +1025,13 @@ export function BhavUnpacker() {
             >
               {copiedScript ? <span className="text-green-400">✓ Copied!</span> : '⎘ Copy script'}
             </button>
-            <button
-              onClick={downloadPythonScript}
+            <a
+              href={SCRIPT_URL}
+              download="price_unpacker.py"
               className="px-3 py-1.5 rounded border border-[#2a4a6a] bg-[#1a2a3a] text-xs font-semibold text-[#00bfff] hover:bg-[#1e3a4e] transition-all"
             >
               ↓ price_unpacker.py
-            </button>
+            </a>
           </div>
         </div>
 
@@ -849,16 +1045,16 @@ export function BhavUnpacker() {
             className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 cursor-pointer transition-all ${dragging ? 'border-[#00bfff] bg-[#00bfff10]' : 'border-[#333] hover:border-[#555] bg-[#1a1a1a]'}`}
           >
             <span className="text-5xl">📦</span>
-            <p className="text-gray-300 font-semibold">Drop zip here, or click to browse</p>
-            <p className="text-gray-600 text-sm">Accepts binary, JSON, or CSV OHLC zips — detects format per entry</p>
-            <input ref={inputRef} type="file" accept=".zip" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) loadZip(f) }} />
+            <p className="text-gray-300 font-semibold">Drop zip or parquet here, or click to browse</p>
+            <p className="text-gray-600 text-sm">Accepts binary, JSON, CSV, or Parquet OHLC zips — or drop a standalone .parquet file</p>
+            <input ref={inputRef} type="file" accept=".zip,.parquet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </div>
         )}
 
         {loading && (
           <div className="flex items-center justify-center gap-3 py-12 text-[#00bfff]">
             <span className="animate-spin text-2xl">⟳</span>
-            <span>Reading zip entries…</span>
+            <span>{loadStatus || 'Reading entries…'}</span>
           </div>
         )}
 
@@ -888,7 +1084,7 @@ export function BhavUnpacker() {
               >
                 ← Load another
               </button>
-              <input ref={inputRef} type="file" accept=".zip" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) loadZip(f) }} />
+              <input ref={inputRef} type="file" accept=".zip,.parquet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
 
               <span className="text-gray-500 text-sm">{entries.length.toLocaleString()} entries</span>
 

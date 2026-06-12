@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   XAxis,
@@ -10,10 +8,19 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Brush,
   ReferenceLine,
   Cell,
 } from 'recharts';
+import {
+  createChart,
+  BaselineSeries,
+  LineStyle,
+  ColorType,
+  CrosshairMode,
+  type IChartApi,
+  type UTCTimestamp,
+  type ISeriesApi,
+} from 'lightweight-charts';
 import { trackIPData } from '../utils/firebase';
 
 interface PnLGraphData {
@@ -24,6 +31,159 @@ interface PnLGraphData {
 }
 
 const GRAPH_API_URL = 'https://bhavpc-default-rtdb.asia-southeast1.firebasedatabase.app/pnlGraph.json';
+
+function TVBaselineChart({
+  data,
+  getValue,
+  renderTooltipRows,
+  formatIndianNumber,
+}: {
+  data: PnLGraphData[]
+  getValue: (d: PnLGraphData) => number
+  renderTooltipRows: (d: PnLGraphData) => React.ReactNode
+  formatIndianNumber: (v: number) => string
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const seriesRef = useRef<ISeriesApi<any> | null>(null)
+  const dataMapRef = useRef<Map<number, PnLGraphData>>(new Map())
+  const formatIndianNumberRef = useRef(formatIndianNumber)
+  formatIndianNumberRef.current = formatIndianNumber
+
+  const [tooltip, setTooltip] = useState<{
+    x: number
+    y: number
+    date: string
+    point: PnLGraphData
+  } | null>(null)
+
+  // Init chart once — never recreate it
+  useEffect(() => {
+    if (!containerRef.current) return
+    const el = containerRef.current
+
+    const chart = createChart(el, {
+      layout: {
+        background: { type: ColorType.Solid, color: '#0d1117' },
+        textColor: '#9ca3af',
+      },
+      grid: {
+        vertLines: { color: '#21262d' },
+        horzLines: { color: '#21262d' },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: {
+        borderColor: '#30363d',
+        scaleMargins: { top: 0.1, bottom: 0.05 },
+      },
+      timeScale: {
+        borderColor: '#30363d',
+        timeVisible: false,
+      },
+      localization: {
+        priceFormatter: (price: number) => formatIndianNumberRef.current(price),
+      },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
+    })
+    chartRef.current = chart
+
+    const series = chart.addSeries(BaselineSeries, {
+      baseValue: { type: 'price', price: 0 },
+      topLineColor: '#26a69a',
+      topFillColor1: 'rgba(38,166,154,0.30)',
+      topFillColor2: 'rgba(38,166,154,0.08)',
+      bottomLineColor: '#ef5350',
+      bottomFillColor1: 'rgba(239,83,80,0.08)',
+      bottomFillColor2: 'rgba(239,83,80,0.30)',
+      lineWidth: 2,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 5,
+      priceLineVisible: false,
+    })
+    seriesRef.current = series
+
+    series.createPriceLine({
+      price: 0,
+      color: '#ef4444',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Break Even',
+    })
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.point || !param.time) { setTooltip(null); return }
+      const point = dataMapRef.current.get(param.time as number)
+      if (!point) { setTooltip(null); return }
+      setTooltip({
+        x: param.point.x,
+        y: param.point.y,
+        date: new Date(point.dateMilli).toLocaleDateString('en-IN', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        }),
+        point,
+      })
+    })
+
+    const ro = new ResizeObserver(() => {
+      if (chartRef.current) chartRef.current.resize(el.clientWidth, el.clientHeight, true)
+    })
+    ro.observe(el)
+
+    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; seriesRef.current = null }
+  }, []) // empty — chart lives for the lifetime of this component
+
+  // Push new data into the existing series whenever the filtered dataset changes
+  useEffect(() => {
+    if (!seriesRef.current || !chartRef.current || !data.length) return
+
+    const dataMap = new Map<number, PnLGraphData>()
+    data.forEach(d => dataMap.set(Math.floor(d.dateMilli / 1000), d))
+    dataMapRef.current = dataMap
+
+    // Sort ascending + deduplicate — lightweight-charts rejects unsorted/duplicate times silently
+    const seen = new Set<number>()
+    const chartData = [...data]
+      .sort((a, b) => a.dateMilli - b.dateMilli)
+      .flatMap(d => {
+        const t = Math.floor(d.dateMilli / 1000)
+        const v = getValue(d)
+        if (!Number.isFinite(v) || seen.has(t)) return []
+        seen.add(t)
+        return [{ time: t as UTCTimestamp, value: v }]
+      })
+
+    seriesRef.current.setData(chartData)
+    // Two rAF passes: first lets LW process setData, second ensures the time scale has updated
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        chartRef.current?.timeScale().fitContent()
+      })
+    })
+  }, [data, getValue])
+
+  return (
+    <div className="relative h-[500px]">
+      <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden" />
+      {tooltip && (
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            left: Math.min(tooltip.x + 14, (containerRef.current?.clientWidth ?? 500) - 220),
+            top: Math.max(tooltip.y - 92, 8),
+          }}
+        >
+          <div className="bg-gray-900/95 text-white px-4 py-3 rounded-lg shadow-2xl border border-gray-700 min-w-[210px]">
+            <p className="text-sm font-semibold mb-2 text-gray-200">{tooltip.date}</p>
+            {renderTooltipRows(tooltip.point)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export const PnLGraph = () => {
   const [graphData, setGraphData] = useState<PnLGraphData[]>([]);
@@ -384,21 +544,6 @@ export const PnLGraph = () => {
           {!loading && !error && graphData.length > 0 && (() => {
             const filteredData = filterDataByTimeframe(graphData, cumulativeTimeframe);
 
-            // Calculate axis domains for filtered data
-            const cumulativeValues = filteredData.map((d) => d.ntplTillDate);
-            const min = Math.min(...cumulativeValues);
-            const max = Math.max(...cumulativeValues);
-            const range = max - min;
-            const offset = range * 0.1;
-            const filteredYAxisDomain: [number, number] = [min - offset, max + offset];
-
-            const dates = filteredData.map((d) => d.dateMilli);
-            const minDate = Math.min(...dates);
-            const maxDate = Math.max(...dates);
-            const dateRange = maxDate - minDate;
-            const dateOffset = dateRange * 0.05;
-            const filteredXAxisDomain: [number, number] = [minDate - dateOffset, maxDate + dateOffset];
-
             return (
               <div className="bg-white dark:bg-gray-800 md:rounded-lg p-2 md:p-6 shadow-lg">
                 <h2 className="text-xl md:text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200 text-center">
@@ -421,105 +566,30 @@ export const PnLGraph = () => {
                   ))}
                 </div>
 
-                <ResponsiveContainer width="100%" height={500}>
-                  <LineChart
-                    data={filteredData}
-                    margin={{
-                      top: 5,
-                      right: 80,
-                      left: 20,
-                      bottom: 5,
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
-                    <XAxis
-                      dataKey="dateMilli"
-                      domain={filteredXAxisDomain}
-                      type="number"
-                      scale="time"
-                      tickFormatter={formatDate}
-                      stroke="#888"
-                      className="dark:stroke-gray-400"
-                    />
-                    <YAxis
-                      domain={filteredYAxisDomain}
-                      ticks={generateRoundTicks(filteredYAxisDomain[0], filteredYAxisDomain[1])}
-                      tickFormatter={(value) => formatIndianNumber(value)}
-                      stroke="#888"
-                      className="dark:stroke-gray-400"
-                      width={80}
-                      tick={({ x, y, payload }) => {
-                        const value = payload.value;
-                        const color = value < 0 ? '#ef4444' : '#888';
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            dy={4}
-                            textAnchor="end"
-                            fill={color}
-                            className="text-xs"
-                          >
-                            {formatIndianNumber(value)}
-                          </text>
-                        );
-                      }}
-                    />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload as PnLGraphData;
-                          return (
-                            <div className="bg-white/20 dark:bg-gray-800/20 backdrop-blur-sm p-4 rounded-lg shadow-xl border border-gray-200/50 dark:border-gray-700/50">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                                {formatDate(data.dateMilli)}
-                              </p>
-                              <p className="text-sm text-gray-900 dark:text-gray-100">
-                                <span className="font-medium">P&L Till Date:</span>{' '}
-                                <span className={data.ntplTillDate >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                                  {formatCurrency(data.ntplTillDate)}
-                                </span>
-                              </p>
-                              <p className="text-sm text-gray-900 dark:text-gray-100">
-                                <span className="font-medium">Daily P&L:</span>{' '}
-                                <span className={data.ntpl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                                  {formatCurrency(data.ntpl)}
-                                </span>
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend />
-                    <ReferenceLine
-                      y={0}
-                      stroke="#ef4444"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      label={{ value: 'Break Even', position: 'right', fill: '#ef4444', fontSize: 12 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="ntplTillDate"
-                      stroke="#667eea"
-                      strokeWidth={2}
-                      dot={{ r: 2, fill: '#667eea', strokeWidth: 0 }}
-                      activeDot={{ r: 6 }}
-                      name="Cumulative P&L"
-                    />
-                    <Brush
-                      dataKey="dateMilli"
-                      height={30}
-                      stroke="#667eea"
-                      tickFormatter={formatDate}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <TVBaselineChart
+                  data={filteredData}
+                  getValue={(d) => d.ntplTillDate}
+                  renderTooltipRows={(d) => (
+                    <>
+                      <p className="text-sm">
+                        <span className="text-gray-400">P&L Till Date: </span>
+                        <span className={d.ntplTillDate >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                          {formatCurrency(d.ntplTillDate)}
+                        </span>
+                      </p>
+                      <p className="text-sm mt-1">
+                        <span className="text-gray-400">Daily P&L: </span>
+                        <span className={d.ntpl >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                          {formatCurrency(d.ntpl)}
+                        </span>
+                      </p>
+                    </>
+                  )}
+                  formatIndianNumber={formatIndianNumber}
+                />
 
                 <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-                  <p>Drag the brush at the bottom to zoom into specific time periods</p>
+                  <p>Scroll or pinch to zoom · drag to pan</p>
                 </div>
               </div>
             );
@@ -735,22 +805,6 @@ export const PnLGraph = () => {
           {/* Daily P&L Chart */}
           {!loading && !error && graphData.length > 0 && (() => {
             const filteredDailyData = filterDataByTimeframe(graphData, dailyChartTimeframe);
-
-            // Calculate axis domains for filtered data
-            const dailyValues = filteredDailyData.map((d) => d.ntpl);
-            const dailyMin = Math.min(...dailyValues);
-            const dailyMax = Math.max(...dailyValues);
-            const dailyRange = dailyMax - dailyMin;
-            const dailyOffset = dailyRange * 0.1;
-            const filteredDailyYAxisDomain: [number, number] = [dailyMin - dailyOffset, dailyMax + dailyOffset];
-
-            const dates = filteredDailyData.map((d) => d.dateMilli);
-            const minDate = Math.min(...dates);
-            const maxDate = Math.max(...dates);
-            const dateRange = maxDate - minDate;
-            const dateOffset = dateRange * 0.05;
-            const filteredDailyXAxisDomain: [number, number] = [minDate - dateOffset, maxDate + dateOffset];
-
             return (
               <div className="bg-white dark:bg-gray-800 md:rounded-lg p-2 md:p-6 shadow-lg mt-6">
                 <h2 className="text-xl md:text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200 text-center">
@@ -773,99 +827,22 @@ export const PnLGraph = () => {
                   ))}
                 </div>
 
-                <ResponsiveContainer width="100%" height={500}>
-                  <LineChart
-                    data={filteredDailyData}
-                    margin={{
-                      top: 5,
-                      right: 80,
-                      left: 20,
-                      bottom: 5,
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="dark:opacity-30" />
-                    <XAxis
-                      dataKey="dateMilli"
-                      domain={filteredDailyXAxisDomain}
-                      type="number"
-                      scale="time"
-                      tickFormatter={formatDate}
-                      stroke="#888"
-                      className="dark:stroke-gray-400"
-                    />
-                    <YAxis
-                      domain={filteredDailyYAxisDomain}
-                      ticks={generateRoundTicks(filteredDailyYAxisDomain[0], filteredDailyYAxisDomain[1])}
-                      tickFormatter={(value) => formatIndianNumber(value)}
-                      stroke="#888"
-                      className="dark:stroke-gray-400"
-                      width={80}
-                      tick={({ x, y, payload }) => {
-                        const value = payload.value;
-                        const color = value < 0 ? '#ef4444' : '#888';
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            dy={4}
-                            textAnchor="end"
-                            fill={color}
-                            className="text-xs"
-                          >
-                            {formatIndianNumber(value)}
-                          </text>
-                        );
-                      }}
-                    />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload as PnLGraphData;
-                          return (
-                            <div className="bg-white/20 dark:bg-gray-800/20 backdrop-blur-sm p-4 rounded-lg shadow-xl border border-gray-200/50 dark:border-gray-700/50">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                                {formatDate(data.dateMilli)}
-                              </p>
-                              <p className="text-sm text-gray-900 dark:text-gray-100">
-                                <span className="font-medium">Daily P&L:</span>{' '}
-                                <span className={data.ntpl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                                  {formatCurrency(data.ntpl)}
-                                </span>
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend />
-                    <ReferenceLine
-                      y={0}
-                      stroke="#ef4444"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      label={{ value: 'Break Even', position: 'right', fill: '#ef4444', fontSize: 12 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="ntpl"
-                      stroke="#fbbf24"
-                      strokeWidth={2}
-                      dot={{ r: 2, fill: '#fbbf24', strokeWidth: 0 }}
-                      activeDot={{ r: 6 }}
-                      name="Daily P&L"
-                    />
-                    <Brush
-                      dataKey="dateMilli"
-                      height={30}
-                      stroke="#fbbf24"
-                      tickFormatter={formatDate}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <TVBaselineChart
+                  data={filteredDailyData}
+                  getValue={(d) => d.ntpl}
+                  renderTooltipRows={(d) => (
+                    <p className="text-sm">
+                      <span className="text-gray-400">Daily P&L: </span>
+                      <span className={d.ntpl >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                        {formatCurrency(d.ntpl)}
+                      </span>
+                    </p>
+                  )}
+                  formatIndianNumber={formatIndianNumber}
+                />
 
                 <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-                  <p>Drag the brush at the bottom to zoom into specific time periods</p>
+                  <p>Scroll or pinch to zoom · drag to pan</p>
                 </div>
               </div>
             );
