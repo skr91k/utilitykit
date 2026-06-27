@@ -1,19 +1,45 @@
 #!/usr/bin/env python3
 """
 Price Unpacker — decode bit-packed OHLC binary zip entries.
-Port of BahvRepo4.byteArrayToresponseMC (Kotlin).
+Port of BahvRepo4.byteArrayToresponseMC (Kotlin). https://gist.github.com/skr91k/9f435d4eea333943b6a03d34f0bd2280
 
 Usage:
     python price_unpacker.py [zip_file]
 """
 
-import zipfile, json, os, sys, math
+import zipfile, json, os, sys, math, io
 
 try:
     import numpy as np
     HAS_NP = True
 except ImportError:
     HAS_NP = False
+
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    HAS_PA = True
+except ImportError:
+    HAS_PA = False
+
+def _ensure_pyarrow():
+    global pa, pq, HAS_PA
+    if HAS_PA:
+        return True
+    print("pyarrow not found — installing...")
+    try:
+        import subprocess
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyarrow'],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        HAS_PA = True
+        print("pyarrow installed successfully.\n")
+        return True
+    except Exception as e:
+        print(f"Auto-install failed: {e}")
+        print("Run manually: pip install pyarrow")
+        return False
 
 
 def read_u32(data: bytes, offset: int) -> int:
@@ -150,6 +176,85 @@ def to_csv(mc: dict) -> str:
     return '\n'.join(rows)
 
 
+def to_parquet(mc: dict) -> bytes:
+    """Serialize a decoded OHLC dict to Parquet bytes (snappy compressed)."""
+    n = len(mc['t'])
+
+    def _f32(lst):
+        return pa.array(lst, type=pa.float32()) if lst else pa.array([None] * n, type=pa.float32())
+
+    def _i64(lst):
+        return pa.array([int(x) for x in lst], type=pa.int64()) if lst else pa.array([None] * n, type=pa.int64())
+
+    arrays = [
+        pa.array(mc['t'], type=pa.int64()),   # unix epoch seconds
+        _f32(mc['o']),
+        _f32(mc['h']),
+        _f32(mc['l']),
+        _f32(mc['c']),
+    ]
+    fields = [
+        pa.field('time',  pa.int64()),
+        pa.field('open',  pa.float32()),
+        pa.field('high',  pa.float32()),
+        pa.field('low',   pa.float32()),
+        pa.field('close', pa.float32()),
+    ]
+
+    if mc['v']:
+        arrays.append(_i64(mc['v']))
+        fields.append(pa.field('volume', pa.int64()))
+    if mc['oi']:
+        arrays.append(_i64(mc['oi']))
+        fields.append(pa.field('oi', pa.int64()))
+    if mc.get('iv'):
+        arrays.append(_f32(mc['iv']))
+        fields.append(pa.field('iv', pa.float32()))
+
+    # store symbol + timeframe as schema-level metadata
+    meta = {
+        b'symbol':        mc['symbol'].encode(),
+        b'timeframeSec':  str(mc['timeframeSec']).encode(),
+    }
+    schema = pa.schema(fields, metadata=meta)
+    table  = pa.table({f.name: arr for f, arr in zip(fields, arrays)}, schema=schema)
+
+    buf = io.BytesIO()
+    pq.write_table(table, buf, compression='snappy')
+    return buf.getvalue()
+
+
+def find_day_high(mc: dict):
+    """Return (timestamp, high_price) of the session-high candle.
+    Add strategies here — e.g. check volume confirmation, gap-up, etc."""
+    if not mc['h']:
+        return None, None
+    if HAS_NP:
+        idx = int(np.argmax(mc['h']))
+    else:
+        idx = max(range(len(mc['h'])), key=mc['h'].__getitem__)
+    return mc['t'][idx], mc['h'][idx]
+
+
+def run_demo(zip_path: str, max_count):
+    """Demo Backtest : Print day high for every entry — no files written, strategy sandbox."""
+    with zipfile.ZipFile(zip_path, 'r') as src:
+        names = [n for n in src.namelist() if not n.endswith('/')]
+        if max_count is not None:
+            names = names[:max_count]
+        #print(f"\n  {'Entry':<40} {'Day High':>10}  {'Timestamp':>12}")
+        #print('  ' + '-' * 66)
+        for name in names:
+            try:
+                mc  = decode_entry(src.read(name))
+                ts, high = find_day_high(mc)
+                high_s = f"{high:.2f}" if high is not None else 'N/A'
+                ts_s   = str(ts)        if ts   is not None else 'N/A'
+                #print(f"  {name:<40} {high_s:>10}  {ts_s:>12}")
+            except Exception as e:
+                print(f"  {name:<40} ERROR: {e}")
+
+
 def bar(done: int, total: int) -> None:
     pct    = done / total if total else 0
     filled = int(40 * pct)
@@ -158,52 +263,116 @@ def bar(done: int, total: int) -> None:
     print(f"\r[{b}] {done:{w}}/{total}", end='', flush=True)
 
 
-def main():
-    print("Price Unpacker — bit-packed OHLC binary zip decoder")
-    print(f"numpy: {'yes — fast mode' if HAS_NP else 'not found — pip install numpy for 10x speed'}")
-    print("=" * 52)
-
-    zip_path = (sys.argv[1] if len(sys.argv) > 1
-                else input("Binary zip path: ").strip().strip("'\""))
-
-    if not os.path.isfile(zip_path):
-        sys.exit(f"File not found: {zip_path}")
-
-    fmt = input("Output format [json/csv] (default json): ").strip().lower()
-    if fmt not in ('json', 'csv'):
-        fmt = 'json'
-
+def process_zip(zip_path: str, fmt: str, ext: str, zip_compress, zip_level, max_count):
+    """Process a single zip file and write output next to it."""
     base     = os.path.splitext(os.path.basename(zip_path))[0]
     out_path = os.path.join(os.path.dirname(zip_path) or '.', f"{base}_{fmt}.zip")
-    ext      = '.json' if fmt == 'json' else '.csv'
 
-    print(f"\nInput : {zip_path}\nOutput: {out_path}\n")
+    print(f"\nInput : {zip_path}\nOutput: {out_path}")
 
     with zipfile.ZipFile(zip_path, 'r') as src:
         names = [n for n in src.namelist() if not n.endswith('/')]
+        if max_count is not None:
+            names = names[:max_count]
         total = len(names)
-        print(f"{total:,} entries\n")
+        print(f"{total:,} entries")
 
         errors = []
-        tick  = max(1, total // 100)
-        with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as dst:
+        tick   = max(1, total // 100)
+        kwargs = {'compression': zip_compress}
+        if zip_level is not None:
+            kwargs['compresslevel'] = zip_level
+
+        with zipfile.ZipFile(out_path, 'w', **kwargs) as dst:
             for i, name in enumerate(names):
                 if i % tick == 0 or i == total - 1:
                     bar(i + 1, total)
                 try:
                     mc = decode_entry(src.read(name))
-                    dst.writestr(name + ext,
-                                 json.dumps(mc) if fmt == 'json' else to_csv(mc))
+                    if fmt == 'json':
+                        dst.writestr(name + ext, json.dumps(mc))
+                    elif fmt == 'csv':
+                        dst.writestr(name + ext, to_csv(mc))
+                    else:  # parquet
+                        dst.writestr(name + ext, to_parquet(mc))
                 except Exception as e:
                     errors.append((name, str(e)))
 
-    print(f"\n\nDone → {out_path}")
+    print(f"\n  Done → {out_path}")
     if errors:
-        print(f"\n{len(errors)} error(s):")
+        print(f"  {len(errors)} error(s):")
         for nm, err in errors[:10]:
-            print(f"  {nm}: {err}")
+            print(f"    {nm}: {err}")
         if len(errors) > 10:
-            print(f"  ... and {len(errors)-10} more")
+            print(f"    ... and {len(errors)-10} more")
+    return errors
+
+
+def main():
+    print("Price Unpacker — bit-packed OHLC binary zip decoder")
+    print(f"numpy  : {'yes — fast mode' if HAS_NP else 'not found — pip install numpy for 10x speed'}")
+    print(f"pyarrow: {'yes — parquet enabled' if HAS_PA else 'not found — pip install pyarrow for parquet output'}")
+    print("=" * 52)
+
+    inp = (sys.argv[1] if len(sys.argv) > 1
+           else input("Zip file or folder path: ").strip().strip("'\""))
+
+    # Resolve zip files to process
+    if os.path.isdir(inp):
+        zip_files = sorted(
+            os.path.join(inp, f) for f in os.listdir(inp)
+            if f.lower().endswith('.zip')
+        )
+        if not zip_files:
+            sys.exit(f"No .zip files found in folder: {inp}")
+        print(f"Found {len(zip_files)} zip file(s) in folder.")
+    elif os.path.isfile(inp):
+        zip_files = [inp]
+    else:
+        sys.exit(f"Path not found: {inp}")
+
+    valid_fmts = ['json', 'csv', 'parquet', 'demo']
+    fmt = input("Mode — convert: [json/csv/parquet]  run code: [demo]  (default demo): ").strip().lower()
+    if fmt not in valid_fmts:
+        fmt = 'demo'
+
+    if fmt == 'parquet' and not _ensure_pyarrow():
+        sys.exit("Cannot proceed without pyarrow.")
+
+    max_count_raw = input("Max entries per zip [all]: ").strip().lower()
+    if max_count_raw in ('', 'all'):
+        max_count = None
+    else:
+        try:
+            max_count = int(max_count_raw)
+            if max_count <= 0:
+                raise ValueError
+        except ValueError:
+            print("Invalid number — processing all entries.")
+            max_count = None
+
+    total_files = len(zip_files)
+
+    if fmt == 'demo':
+        for idx, zp in enumerate(zip_files, 1):
+            print(f"\n[{idx}/{total_files}] {os.path.basename(zp)}")
+            run_demo(zp, max_count)
+        print(f"\n{'='*52}")
+        print(f"Demo done. {total_files} file(s) scanned.")
+        return
+
+    ext          = {'json': '.json', 'csv': '.csv', 'parquet': '.parquet'}[fmt]
+    zip_compress = zipfile.ZIP_STORED if fmt == 'parquet' else zipfile.ZIP_DEFLATED
+    zip_level    = None if fmt == 'parquet' else 6
+
+    all_errors   = 0
+    for idx, zp in enumerate(zip_files, 1):
+        print(f"\n[{idx}/{total_files}] {os.path.basename(zp)}")
+        errs = process_zip(zp, fmt, ext, zip_compress, zip_level, max_count)
+        all_errors += len(errs)
+
+    print(f"\n{'='*52}")
+    print(f"All done. {total_files} file(s) processed, {all_errors} total error(s).")
 
 
 if __name__ == '__main__':

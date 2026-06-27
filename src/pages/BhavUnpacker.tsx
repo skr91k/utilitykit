@@ -431,6 +431,26 @@ function parseJSONEntry(text: string, entryName: string): ResponseMC {
     return mc
   }
 
+  // Yahoo Finance format: { chart: { result: [{ meta, timestamp, indicators }] } }
+  if (parsed.chart?.result?.[0]?.timestamp && parsed.chart.result[0].indicators?.quote?.[0]) {
+    const r = parsed.chart.result[0]
+    const meta = r.meta ?? {}
+    const sym = String(meta.symbol ?? name)
+    const granStr: string = String(meta.dataGranularity ?? '1d')
+    const granMap: Record<string, number> = { '1m': 60, '2m': 120, '5m': 300, '15m': 900, '30m': 1800, '60m': 3600, '90m': 5400, '1h': 3600, '1d': 86400, '5d': 432000, '1wk': 604800, '1mo': 2592000 }
+    const tfs = granMap[granStr] ?? 86400
+    const q = r.indicators.quote[0] as Record<string, (number | null)[]>
+    const ts = r.timestamp as number[]
+    const mc: ResponseMC = { symbol: sym, timeframeSec: tfs, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
+    for (let i = 0; i < ts.length; i++) {
+      const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i]
+      if (o == null || h == null || l == null || c == null) continue
+      mc.t.push(ts[i]); mc.o.push(o); mc.h.push(h); mc.l.push(l); mc.c.push(c)
+      mc.v.push(q.volume?.[i] ?? 0)
+    }
+    return mc
+  }
+
   // Our ResponseMC format — sanitize to guarantee all fields are arrays
   return sanitizeMC(parsed, entryName)
 }
@@ -634,10 +654,13 @@ function FolderTreeView({
 
 // ---- Candlestick chart ----
 
+interface CrosshairLegend { t: number; o: number; h: number; l: number; c: number; v: number | null }
+
 function CandleChart({ mc }: { mc: ResponseMC }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [legend, setLegend] = useState<CrosshairLegend | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -722,12 +745,25 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
       })
     }
 
+    const hasVol = mc.v.length > 0 && mc.v.some(v => v > 0)
+    chart.subscribeCrosshairMove(param => {
+      if (!param.time || !param.seriesData) { setLegend(null); return }
+      const ts = param.time as number
+      const idx = mc.t.indexOf(ts)
+      if (idx === -1) { setLegend(null); return }
+      setLegend({
+        t: ts,
+        o: mc.o[idx], h: mc.h[idx], l: mc.l[idx], c: mc.c[idx],
+        v: hasVol ? mc.v[idx] : null,
+      })
+    })
+
     const ro = new ResizeObserver(() => {
       chart.resize(el.clientWidth, el.clientHeight, true)
     })
     ro.observe(el)
 
-    return () => { ro.disconnect(); chart.remove(); chartRef.current = null }
+    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; setLegend(null) }
   }, [mc])
 
   useEffect(() => {
@@ -736,9 +772,25 @@ function CandleChart({ mc }: { mc: ResponseMC }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [isFullscreen])
 
+  const intraday = mc.timeframeSec < 86400
+  const showSeconds = mc.timeframeSec < 60
+
   return (
     <div className={isFullscreen ? 'fixed inset-0 z-50' : 'relative h-[500px]'}>
       <div ref={containerRef} className="w-full h-full" />
+
+      {/* Crosshair legend — top-left */}
+      {legend && (
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-2 px-2 py-1 rounded bg-[#0e0e0e]/90 border border-[#2a2a2a] text-[11px] font-mono pointer-events-none select-none flex-wrap">
+          <span className="text-gray-500">{fmtIST(legend.t, intraday, showSeconds)}</span>
+          <span className="text-gray-400">O<span className="text-white ml-0.5">{legend.o.toFixed(2)}</span></span>
+          <span className="text-gray-400">H<span className="text-green-400 ml-0.5">{legend.h.toFixed(2)}</span></span>
+          <span className="text-gray-400">L<span className="text-red-400 ml-0.5">{legend.l.toFixed(2)}</span></span>
+          <span className="text-gray-400">C<span className={`ml-0.5 ${legend.c >= legend.o ? 'text-green-400' : 'text-red-400'}`}>{legend.c.toFixed(2)}</span></span>
+          {legend.v !== null && <span className="text-gray-400">V<span className="text-yellow-400 ml-0.5">{legend.v.toLocaleString()}</span></span>}
+        </div>
+      )}
+
       <button
         onClick={() => setIsFullscreen(f => !f)}
         title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
@@ -796,6 +848,13 @@ export function BhavUnpacker() {
     setFilter(''); setExpanded({}); setShowClearConfirm(false)
     dataCache.current.clear(); parquetMCCache.current.clear()
     parquetFileRef.current = null; parquetSymColRef.current = ''
+
+    const GB2 = 2 * 1024 * 1024 * 1024
+    if (file.size > GB2) {
+      setError(`File too large for the browser (${(file.size / 1e9).toFixed(1)} GB). JSZip cannot handle ZIP64 files >2 GB. Use the Python script instead:\n  python price_unpacker.py "${file.name}"`)
+      return
+    }
+
     setLoading(true)
     try {
       const zip = await JSZip.loadAsync(file)
@@ -863,6 +922,20 @@ export function BhavUnpacker() {
     setEntries([]); setSelected(null); setDecoded(null); setFilter('')
     setExpanded({}); setError(null); setShowClearConfirm(false)
   }
+
+  useEffect(() => {
+    if (entries.length === 0) return
+    const first = entries[0]
+    const parts = first.name.split('/')
+    if (parts.length > 1) {
+      const toExpand: Record<string, boolean> = {}
+      for (let i = 1; i < parts.length; i++) {
+        toExpand[parts.slice(0, i).join('/')] = true
+      }
+      setExpanded(prev => ({ ...prev, ...toExpand }))
+    }
+    handleSelect(first)
+  }, [entries]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false)
@@ -1006,6 +1079,7 @@ export function BhavUnpacker() {
   return (
     <div className="min-h-screen bg-[#121212] text-[#f0f0f0] flex flex-col items-center p-4 pt-8">
       <div className="w-full max-w-[1100px]">
+        <a href="/" className="inline-flex items-center gap-1.5 mb-4 px-3 py-1.5 rounded border border-[#333] text-sm text-gray-400 hover:border-[#555] hover:text-gray-200 transition-all">← Home</a>
         <h1 className="text-center text-[#00bfff] text-2xl font-bold mb-1">Price Unpacker</h1>
         <p className="text-center text-gray-500 text-sm mb-3">
           Load a binary zip — decode bit-packed OHLC entries, preview, download as JSON or CSV
@@ -1045,8 +1119,8 @@ export function BhavUnpacker() {
             className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center gap-3 cursor-pointer transition-all ${dragging ? 'border-[#00bfff] bg-[#00bfff10]' : 'border-[#333] hover:border-[#555] bg-[#1a1a1a]'}`}
           >
             <span className="text-5xl">📦</span>
-            <p className="text-gray-300 font-semibold">Drop zip or parquet here, or click to browse</p>
-            <p className="text-gray-600 text-sm">Accepts binary, JSON, CSV, or Parquet OHLC zips — or drop a standalone .parquet file</p>
+            <p className="text-gray-300 font-semibold">Drop zip, or click to browse</p>
+            <p className="text-gray-600 text-sm">Accepts binary, JSON, CSV, Parquet, or Yahoo Finance JSON zips — or drop a standalone .parquet file</p>
             <input ref={inputRef} type="file" accept=".zip,.parquet" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </div>
         )}
@@ -1059,7 +1133,7 @@ export function BhavUnpacker() {
         )}
 
         {error && (
-          <div className="mt-4 p-3 rounded-md bg-red-900/40 border border-red-700 text-red-300 text-sm">{error}</div>
+          <div className="mt-4 p-3 rounded-md bg-red-900/40 border border-red-700 text-red-300 text-sm whitespace-pre-wrap font-mono">{error}</div>
         )}
 
         {/* Clear confirm dialog */}

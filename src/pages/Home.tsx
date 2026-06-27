@@ -19,7 +19,7 @@ const utilities = [
   { id: 15, icon: '💸', name: 'Split Expense', path: '/split', description: 'Split bills with friends, shareable via link' },
   { id: 16, icon: '🏏', name: 'Cricket Tracker', path: '/cricket', description: 'Track series, matches & live ball-by-ball scores' },
   { id: 17, icon: '🔑', name: 'JWT Decoder', path: '/jwt', description: 'Decode & inspect JWT tokens — claims, expiry, header' },
-  { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: '/priceUnpacker', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
+  { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: '#', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
   { id: 14, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
   { id: 10, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
 ]

@@ -17,6 +17,7 @@ import { SplitExpense } from './pages/SplitExpense'
 import { CricketTracker } from './pages/CricketTracker'
 import { JWTDecoder } from './pages/JWTDecoder'
 import { BhavUnpacker } from './pages/BhavUnpacker'
+import { TVChart } from './pages/TVChart'
 
 function App() {
   return (
@@ -41,7 +42,8 @@ function App() {
         <Route path="/cricket" element={<CricketTracker />} />
         <Route path="/cricket/:token" element={<CricketTracker />} />
         <Route path="/jwt" element={<JWTDecoder />} />
-        <Route path="/priceUnpacker" element={<BhavUnpacker />} />
+        <Route path="/priceDecoder" element={<BhavUnpacker />} />
+        <Route path="/tv" element={<TVChart />} />
       </Routes>
     </BrowserRouter>
   )
