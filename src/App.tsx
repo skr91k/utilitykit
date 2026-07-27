@@ -18,6 +18,8 @@ import { CricketTracker } from './pages/CricketTracker'
 import { JWTDecoder } from './pages/JWTDecoder'
 import { BhavUnpacker } from './pages/BhavUnpacker'
 import { TVChart } from './pages/TVChart'
+import { PasteBin } from './pages/PasteBin'
+import { PasteView } from './pages/PasteView'
 
 function App() {
   return (
@@ -44,6 +46,8 @@ function App() {
         <Route path="/jwt" element={<JWTDecoder />} />
         <Route path="/priceDecoder" element={<BhavUnpacker />} />
         <Route path="/tv" element={<TVChart />} />
+        <Route path="/paste" element={<PasteBin />} />
+        <Route path="/paste/:kind/:id" element={<PasteView />} />
       </Routes>
     </BrowserRouter>
   )
