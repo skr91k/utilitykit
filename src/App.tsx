@@ -20,6 +20,7 @@ import { BhavUnpacker } from './pages/BhavUnpacker'
 import { TVChart } from './pages/TVChart'
 import { PasteBin } from './pages/PasteBin'
 import { PasteView } from './pages/PasteView'
+import { ZipRepair } from './pages/ZipRepair'
 
 function App() {
   return (
@@ -48,6 +49,7 @@ function App() {
         <Route path="/tv" element={<TVChart />} />
         <Route path="/paste" element={<PasteBin />} />
         <Route path="/paste/:kind/:id" element={<PasteView />} />
+        <Route path="/ziprepair" element={<ZipRepair />} />
       </Routes>
     </BrowserRouter>
   )

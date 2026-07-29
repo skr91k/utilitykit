@@ -376,9 +376,48 @@ function sanitizeMC(raw: Partial<ResponseMC>, entryName: string): ResponseMC {
   }
 }
 
+// Parse a row's timestamp → UTC seconds. Accepts IST datetime strings ("YYYY-MM-DD HH:MM:SS")
+// or numeric epoch values (seconds, or ms if > 1e12).
+function rowTimeToUtcSec(v: unknown): number {
+  if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : v
+  const s = String(v ?? '')
+  if (/^\d+$/.test(s)) { const n = Number(s); return n > 1e12 ? Math.floor(n / 1000) : n }
+  const [datePart, timePart = '00:00:00'] = s.split(' ')
+  const [yr, mo, dy] = datePart.split('-').map(Number)
+  const [hh, mm, ss] = timePart.split(':').map(Number)
+  return Math.floor(Date.UTC(yr, mo - 1, (dy || 1), hh || 0, mm || 0, ss || 0) / 1000) - IST_OFFSET
+}
+
+// Build a ResponseMC from an array of bar objects with datetime|time/open/high/low/close (+volume/open_interest).
+function rowObjectsToMC(rows: Record<string, unknown>[], fallbackName: string): ResponseMC {
+  const first = rows[0]
+  const tKey = 'datetime' in first ? 'datetime' : 'time' in first ? 'time' : 'timestamp' in first ? 'timestamp' : 'date'
+  const arr = [...rows].sort((a, b) =>
+    String(a[tKey]).localeCompare(String(b[tKey]), undefined, { numeric: true })
+  )
+  const sym = String(first.stock_code ?? first.symbol ?? fallbackName)
+  const hasOi = 'open_interest' in first || 'oi' in first
+  const hasV = 'volume' in first || 'vol' in first
+  const mc: ResponseMC = { symbol: sym, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
+  for (const row of arr) {
+    mc.t.push(rowTimeToUtcSec(row[tKey]))
+    mc.o.push(Number(row.open ?? 0)); mc.h.push(Number(row.high ?? 0))
+    mc.l.push(Number(row.low ?? 0)); mc.c.push(Number(row.close ?? 0))
+    if (hasV) mc.v.push(Number(row.volume ?? row.vol ?? 0))
+    if (hasOi) mc.oi.push(Number(row.open_interest ?? row.oi ?? 0))
+  }
+  if (mc.t.length > 1) mc.timeframeSec = mc.t[1] - mc.t[0]
+  return mc
+}
+
 function parseJSONEntry(text: string, entryName: string): ResponseMC {
   const parsed = JSON.parse(text)
   const name = entryName.split('/').pop()?.replace(/\.json$/, '') ?? ''
+
+  // Format: bare top-level array of bar objects [{datetime|time, open, high, low, close, volume?, open_interest?}, ...]
+  if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+    return rowObjectsToMC(parsed as Record<string, unknown>[], name)
+  }
 
   // Format: { candles: [[t,o,h,l,c,v?,oi?], ...], ... }
   if (Array.isArray(parsed.candles)) {
@@ -409,26 +448,7 @@ function parseJSONEntry(text: string, entryName: string): ResponseMC {
 
   // Format: { Success: [{datetime (IST string), open, high, low, close, volume, open_interest?, stock_code, ...}] }
   if (Array.isArray(parsed.Success) && parsed.Success.length > 0 && 'datetime' in parsed.Success[0]) {
-    const arr = [...parsed.Success as Record<string, unknown>[]].sort(
-      (a, b) => String(a.datetime).localeCompare(String(b.datetime))
-    )
-    const first = arr[0]
-    const sym = String(first.stock_code ?? name)
-    const hasOi = 'open_interest' in first
-    const mc: ResponseMC = { symbol: sym, timeframeSec: 0, t: [], o: [], h: [], l: [], c: [], v: [], oi: [], iv: [] }
-    for (const row of arr) {
-      const [datePart, timePart = '00:00:00'] = String(row.datetime ?? '').split(' ')
-      const [yr, mo, dy] = datePart.split('-').map(Number)
-      const [hh, mm, ss] = timePart.split(':').map(Number)
-      const utcSec = Math.floor(Date.UTC(yr, mo - 1, dy, hh, mm, ss) / 1000) - IST_OFFSET
-      mc.t.push(utcSec)
-      mc.o.push(Number(row.open ?? 0)); mc.h.push(Number(row.high ?? 0))
-      mc.l.push(Number(row.low  ?? 0)); mc.c.push(Number(row.close ?? 0))
-      mc.v.push(Number(row.volume ?? 0))
-      if (hasOi) mc.oi.push(Number(row.open_interest ?? 0))
-    }
-    if (mc.t.length > 1) mc.timeframeSec = mc.t[1] - mc.t[0]
-    return mc
+    return rowObjectsToMC(parsed.Success as Record<string, unknown>[], name)
   }
 
   // Yahoo Finance format: { chart: { result: [{ meta, timestamp, indicators }] } }

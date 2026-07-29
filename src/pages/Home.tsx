@@ -21,15 +21,22 @@ const utilities = [
   { id: 13, icon: '📤', name: 'File Share p2p', path: 'http://0.0.0.0:8000/fileshare/', description: 'Share Files across devices p2p /relay' },
   { id: 17, icon: '🔑', name: 'JWT Decoder', path: '/jwt', description: 'Decode & inspect JWT tokens — claims, expiry, header' },
   { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: '#', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
+  { id: 20, icon: '🩹', name: 'Zip Repair', path: '/ziprepair', description: 'Repair corrupt or renamed zips — scan, recover entries, download fixed archive' },
   { id: 14, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
   { id: 10, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
 ]
+
+// Bump this key whenever the default order below changes — it resets everyone's
+// stored click history so the new order actually shows instead of being buried
+// under their old recents.
+const RECENT_CLICKS_KEY = 'utilityRecentClicks_v2'
 
 function Home() {
   const { user, loading, login, logout, loginAnonymous } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [recentClicks, setRecentClicks] = useState<number[]>(() => {
-    const saved = localStorage.getItem('utilityRecentClicks')
+    localStorage.removeItem('utilityRecentClicks')
+    const saved = localStorage.getItem(RECENT_CLICKS_KEY)
     if (saved) {
       try {
         return JSON.parse(saved)
@@ -46,7 +53,7 @@ function Home() {
       if (id === 10) return prev
       const filtered = prev.filter(clickId => clickId !== id)
       const updated = [id, ...filtered]
-      localStorage.setItem('utilityRecentClicks', JSON.stringify(updated))
+      localStorage.setItem(RECENT_CLICKS_KEY, JSON.stringify(updated))
       return updated
     })
   }

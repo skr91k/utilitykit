@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { loadExpiries, formatExpiry, expiryToApiDate, type ProductType, type ExpiryMap } from '../utils/expiry';
 import {
   createChart,
   CandlestickSeries,
@@ -22,9 +23,9 @@ const INDEX_CFG: Record<string, IndexCfg> = {
   NIFTYNXT50: { stock_code: 'NIFNEX', exchange: 'NSE' },
   SENSEX:     { stock_code: 'BSESEN', exchange: 'BSE' },
   BANKEX:     { stock_code: 'BANKEX', exchange: 'BSE' },
-  FOCIT:      { stock_code: 'FOCIT',  exchange: 'NSE' },
-  NIFTYIT:    { stock_code: 'NIFTYIT', exchange: 'NSE' },
-  SENSEX50:   { stock_code: 'BSE50',  exchange: 'BSE' },
+  FOCIT:      { stock_code: 'BSEFOC',  exchange: 'BSE' },
+  NIFTYIT:    { stock_code: 'CNXIT', exchange: 'NSE' },
+  SENSEX50:   { stock_code: 'BSES50',  exchange: 'BSE' },
 };
 
 const INDEXES = Object.keys(INDEX_CFG);
@@ -42,11 +43,38 @@ const STRIKE_MAP: Record<string, number> = {
   FOCIT:      50,
 };
 
+// Fallback LTP (approx. levels, mid-2026) used to centre option strikes when
+// the user has not clicked a price on the index chart.
+const INDEX_LTP: Record<string, number> = {
+  NIFTY:      24000,
+  BANKNIFTY:  56800,
+  FINNIFTY:   27000,
+  MIDCPNIFTY: 13500,
+  NIFTYNXT50: 68000,
+  NIFTYIT:    40000,
+  SENSEX:     78500,
+  BANKEX:     64000,
+  SENSEX50:   25000,
+  FOCIT:      12000,
+};
+
+// Number of strikes listed above and below the ATM strike
+const STRIKE_WINGS = 20;
+
 const INTERVALS = [
   { label: '1D', value: '1day' },
   { label: '1m', value: '1minute' },
   { label: '1s', value: '1second' },
 ];
+
+const PRODUCTS: { label: string; value: ProductType }[] = [
+  { label: 'Index',   value: 'index' },
+  { label: 'Futures', value: 'futures' },
+  { label: 'Options', value: 'options' },
+];
+
+// Cash exchange -> derivatives exchange
+const DERIV_EXCHANGE: Record<string, string> = { NSE: 'NFO', BSE: 'BFO' };
 
 const PROXY_KEY = 'icici_proxy_base';
 const API_PATH  = 'breezeapi.icicidirect.com/api/v2/historicalcharts';
@@ -66,7 +94,10 @@ interface ApiResponse {
 }
 
 function parseDatetime(dt: string): number {
-  return new Date(dt.replace(' ', 'T')).getTime() / 1000;
+  // ICICI datetimes are IST wall-clock with no tz. lightweight-charts always
+  // renders in UTC, so parse the wall-clock as UTC to display IST verbatim.
+  const s = dt.replace(' ', 'T');
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z').getTime() / 1000;
 }
 
 function buildUrl(proxyBase: string) {
@@ -80,6 +111,17 @@ export const TVChart = () => {
 
   const [selectedIndex,    setSelectedIndex]    = useState('NIFTY');
   const [selectedInterval, setSelectedInterval] = useState('1day');
+  const [toDate,           setToDate]           = useState(() => new Date().toISOString().slice(0, 10));
+  const [productType,      setProductType]      = useState<ProductType>('index');
+  const [selectedExpiry,   setSelectedExpiry]   = useState('');
+  const [strike,           setStrike]           = useState('');
+  const [right,            setRight]            = useState<'call' | 'put'>('call');
+  const [expiryMap,        setExpiryMap]        = useState<ExpiryMap>({});
+  const [clickedPrice,     setClickedPrice]     = useState<number | null>(null);
+
+  // Latest productType for the (once-bound) chart click handler
+  const productTypeRef = useRef(productType);
+  productTypeRef.current = productType;
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
   const [dataCount, setDataCount] = useState(0);
@@ -150,6 +192,13 @@ export const TVChart = () => {
     chart.priceScale('vol_scale').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     volumeSeriesRef.current = volumeSeries;
 
+    // Click on the index/futures chart -> remember the price to centre option strikes
+    chart.subscribeClick((param) => {
+      if (productTypeRef.current === 'options' || !param.point || !candleSeriesRef.current) return;
+      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
+      if (price != null && isFinite(price as number)) setClickedPrice(price as number);
+    });
+
     chart.subscribeCrosshairMove((param) => {
       if (!param.point || !param.time) { setTooltip(null); return; }
       const d = rawDataRef.current.get(param.time as number);
@@ -160,6 +209,7 @@ export const TVChart = () => {
         time: new Date((param.time as number) * 1000).toLocaleString('en-IN', {
           day: '2-digit', month: 'short', year: 'numeric',
           hour: '2-digit', minute: '2-digit', second: '2-digit',
+          timeZone: 'UTC',
         }),
         ...d,
       });
@@ -184,21 +234,72 @@ export const TVChart = () => {
     chartRef.current.applyOptions({ timeScale: { secondsVisible: selectedInterval === '1second' } });
   }, [selectedInterval]);
 
+  // Load expiry dates when switching to a derivative product
+  useEffect(() => {
+    if (productType === 'index') return;
+    let cancelled = false;
+    loadExpiries(productType)
+      .then(map => { if (!cancelled) setExpiryMap(map); })
+      .catch(() => { if (!cancelled) setExpiryMap({}); });
+    return () => { cancelled = true; };
+  }, [productType]);
+
+  // Expiries for the current index (futures/options)
+  const expiries = productType === 'index' ? [] : (expiryMap[selectedIndex] ?? []);
+
+  // Default the expiry selection to the nearest upcoming (or latest) expiry
+  useEffect(() => {
+    if (productType === 'index' || expiries.length === 0) return;
+    if (expiries.includes(selectedExpiry)) return;
+    const today = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    setSelectedExpiry(expiries.find(e => e >= today) ?? expiries[expiries.length - 1]);
+  }, [productType, expiries, selectedExpiry]);
+
+  // Clicking a price is only meaningful for the index it was clicked on
+  useEffect(() => { setClickedPrice(null); }, [selectedIndex]);
+
+  // ATM strike from the clicked price (or hardcoded LTP fallback) + strike ladder
+  const strikeStep = STRIKE_MAP[selectedIndex] ?? 50;
+  const refPrice   = clickedPrice ?? INDEX_LTP[selectedIndex] ?? 0;
+  const atmStrike  = Math.round(refPrice / strikeStep) * strikeStep;
+  const strikeList = Array.from({ length: STRIKE_WINGS * 2 + 1 },
+    (_, i) => atmStrike + (i - STRIKE_WINGS) * strikeStep).filter(s => s > 0);
+
+  // Default the strike to ATM (CE) when entering options or recentring on a new price
+  useEffect(() => {
+    if (productType !== 'options' || atmStrike <= 0) return;
+    setStrike(String(atmStrike));
+  }, [productType, atmStrike]);
+
   const fetchData = useCallback(async () => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || !proxyBase) return;
+    if (productType !== 'index' && !selectedExpiry) return;
+    if (productType === 'options' && !strike.trim()) return;
 
     setLoading(true);
     setError(null);
     setTooltip(null);
 
     try {
+      const cfg = INDEX_CFG[selectedIndex];
+      const cashExchange = cfg?.exchange ?? 'NSE';
+
       const params = new URLSearchParams({
         interval:      selectedInterval,
         from_date:     '1991-06-05T03:45:00.000Z',
-        to_date:       '2030-06-05T10:00:00.000Z',
-        stock_code:    INDEX_CFG[selectedIndex]?.stock_code ?? selectedIndex,
-        exchange_code: INDEX_CFG[selectedIndex]?.exchange   ?? 'NSE',
+        to_date:       `${toDate}T23:59:59.000Z`,
+        stock_code:    cfg?.stock_code ?? selectedIndex,
+        exchange_code: productType === 'index' ? cashExchange : (DERIV_EXCHANGE[cashExchange] ?? 'NFO'),
       });
+
+      if (productType !== 'index') {
+        params.set('product_type', productType);
+        params.set('expiry_date', expiryToApiDate(selectedExpiry));
+      }
+      if (productType === 'options') {
+        params.set('strike_price', strike.trim());
+        params.set('right', right);
+      }
 
       const res = await fetch(`${buildUrl(proxyBase)}?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -249,7 +350,7 @@ export const TVChart = () => {
       });
       strikeLineRefs.current = [];
 
-      if (candles.length && candleSeriesRef.current) {
+      if (candles.length && candleSeriesRef.current && productType !== 'options') {
         const step   = STRIKE_MAP[selectedIndex] ?? 50;
         const prices = candles.flatMap(c => [c.high, c.low]);
         const start  = Math.floor(Math.min(...prices) / step) * step;
@@ -275,7 +376,7 @@ export const TVChart = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedIndex, selectedInterval, proxyBase]);
+  }, [selectedIndex, selectedInterval, toDate, proxyBase, productType, selectedExpiry, strike, right]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -345,6 +446,68 @@ export const TVChart = () => {
 
         <div className="w-px h-5 bg-[#30363d] flex-shrink-0" />
 
+        {/* Product type */}
+        <div className="flex gap-1 flex-shrink-0">
+          {PRODUCTS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => setProductType(p.value)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                productType === p.value
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-[#21262d] text-gray-400 hover:text-white hover:bg-[#30363d]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Expiry selector */}
+        {productType !== 'index' && (
+          <select
+            value={selectedExpiry}
+            onChange={e => setSelectedExpiry(e.target.value)}
+            className="bg-[#21262d] border border-[#30363d] text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0"
+          >
+            {expiries.length === 0 && <option value="">No expiries</option>}
+            {expiries.map(e => <option key={e} value={e}>{formatExpiry(e)}</option>)}
+          </select>
+        )}
+
+        {/* Strike + right (options only) */}
+        {productType === 'options' && (
+          <>
+            <select
+              value={strike}
+              onChange={e => setStrike(e.target.value)}
+              className="bg-[#21262d] border border-[#30363d] text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0"
+              title={clickedPrice != null ? `From clicked price ${clickedPrice.toFixed(0)}` : `From LTP ${refPrice.toFixed(0)}`}
+            >
+              {strikeList.map(s => (
+                <option key={s} value={s}>{s === atmStrike ? `${s} • ATM` : s}</option>
+              ))}
+            </select>
+            <div className="flex gap-1 flex-shrink-0">
+              {(['call', 'put'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRight(r)}
+                  className={`px-3 py-1 rounded text-xs font-medium uppercase transition-colors ${
+                    right === r
+                      ? (r === 'call' ? 'bg-[#26a69a] text-white' : 'bg-[#ef5350] text-white')
+                      : 'bg-[#21262d] text-gray-400 hover:text-white hover:bg-[#30363d]'
+                  }`}
+                >
+                  {r === 'call' ? 'CE' : 'PE'}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="w-px h-5 bg-[#30363d] flex-shrink-0" />
+
         <div className="flex gap-1 flex-shrink-0">
           {INTERVALS.map(iv => (
             <button
@@ -360,6 +523,18 @@ export const TVChart = () => {
             </button>
           ))}
         </div>
+
+        <div className="w-px h-5 bg-[#30363d] flex-shrink-0" />
+
+        <label className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0">
+          To
+          <input
+            type="date"
+            value={toDate}
+            onChange={e => setToDate(e.target.value)}
+            className="bg-[#21262d] border border-[#30363d] text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 cursor-pointer [color-scheme:dark]"
+          />
+        </label>
 
         <button
           onClick={fetchData}
