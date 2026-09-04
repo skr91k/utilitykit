@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { trackIPData, database } from '../utils/firebase';
+import { database } from '../utils/firebase';
 import { ref, get } from 'firebase/database';
 
 export function SocialPreview() {
@@ -36,7 +36,6 @@ export function SocialPreview() {
 
     };
 
-    trackIPData('page_load');
     checkRedirect();
   }, [location]);
 

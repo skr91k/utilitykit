@@ -4,6 +4,8 @@ import { useAuth } from '../utils/useAuth'
 import './Home.css'
 
 const utilities = [
+  { id: 22, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
+  { id: 21, icon: '⛽', name: 'Fuel & Trip Tracker', path: '/fuel', description: 'Log trips & fuel — litres, range, distance, history & PDF export' },
   { id: 19, icon: '📋', name: 'Paste Bin', path: '/paste', description: 'Public & private pastes — clickable links, copy, edit, remove' },
   { id: 3, icon: '🔳', name: 'QR Code Generator', path: '/qr', description: 'Generate QR codes instantly' },
   { id: 1, icon: '🔢', name: 'Counter', path: '/counter', description: 'Simple click counter' },
@@ -13,14 +15,14 @@ const utilities = [
   { id: 16, icon: '🏏', name: 'Cricket Tracker', path: '/cricket', description: 'Track series, matches & live ball-by-ball scores' },
   { id: 11, icon: '📺', name: 'TV Channels', path: 'https://tv1.web.app/', description: 'Watch Live TV Channels' },
   { id: 12, icon: '📚', name: 'Islamic Books', path: 'https://islamicbooks2.web.app/', description: 'Read Islamic Books Online' },
-  { id: 2, icon: '📈', name: 'P&L Dashboard', path: '/pl', description: 'Profit & Loss Dashboard' },
+  { id: 2, icon: '📈', name: 'P&L Dashboard', path: 'https://kline-data.web.app/pl', description: 'Profit & Loss Dashboard' },
   { id: 4, icon: '🔐', name: 'Encryption Tool', path: '/encrypt', description: 'Encrypt/Decrypt with AES, DES, etc.' },
   { id: 5, icon: '⏳', name: 'Epoch Converter', path: '/epoch', description: 'Convert Unix timestamps' },
   { id: 6, icon: '🗄️', name: 'SQLite Viewer', path: '/sqlite', description: 'View SQLite database files' },
   { id: 7, icon: '🔤', name: 'String Tools', path: '/string', description: 'Base64, URL encode, Hash' },
   { id: 13, icon: '📤', name: 'File Share p2p', path: 'http://0.0.0.0:8000/fileshare/', description: 'Share Files across devices p2p /relay' },
   { id: 17, icon: '🔑', name: 'JWT Decoder', path: '/jwt', description: 'Decode & inspect JWT tokens — claims, expiry, header' },
-  { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: '#', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
+  { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: 'https://kline-data.web.app/priceDecoder', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
   { id: 20, icon: '🩹', name: 'Zip Repair', path: '/ziprepair', description: 'Repair corrupt or renamed zips — scan, recover entries, download fixed archive' },
   { id: 14, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
   { id: 10, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
@@ -29,7 +31,7 @@ const utilities = [
 // Bump this key whenever the default order below changes — it resets everyone's
 // stored click history so the new order actually shows instead of being buried
 // under their old recents.
-const RECENT_CLICKS_KEY = 'utilityRecentClicks_v2'
+const RECENT_CLICKS_KEY = 'utilityRecentClicks_v4'
 
 function Home() {
   const { user, loading, login, logout, loginAnonymous } = useAuth()

@@ -1,0 +1,17 @@
+{
+  "id": "/money",
+  "name": "MoneyFlow — Cash In & Out Manager",
+  "short_name": "MoneyFlow",
+  "description": "Track cash in and cash out — running balance, payment methods, search and history.",
+  "start_url": "/money",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1e3a8a",
+  "background_color": "#f3f6fb",
+  "icons": [
+    { "src": "/money-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/money-icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/money-icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

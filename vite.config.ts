@@ -39,6 +39,24 @@ export default defineConfig({
         icons: [
           { src: '/vite.svg', sizes: '48x48', type: 'image/svg+xml' },
         ],
+        // Long-pressing the installed Utility Kit icon on Android lists these;
+        // a shortcut can then be dragged straight onto the home screen.
+        shortcuts: [
+          {
+            name: 'Fuel & Trip Tracker',
+            short_name: 'Fuel Log',
+            description: 'Log a vehicle trip and fuel fill',
+            url: '/fuel',
+            icons: [{ src: '/fuel-icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+          },
+          {
+            name: 'MoneyFlow',
+            short_name: 'MoneyFlow',
+            description: 'Log a cash in or cash out transaction',
+            url: '/money',
+            icons: [{ src: '/money-icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+          },
+        ],
       },
     }),
   ],

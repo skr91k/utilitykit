@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, push, set, get } from 'firebase/database';
+import { getDatabase, ref, set, get } from 'firebase/database';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { getAnalytics, logEvent } from 'firebase/analytics';
@@ -58,12 +58,55 @@ export type { User };
 export const DATA_URL = 'https://bhavpc-default-rtdb.asia-southeast1.firebasedatabase.app/pnlsudokutrader.json';
 export const LINKS_URL = 'https://bhavpc-default-rtdb.asia-southeast1.firebasedatabase.app/links_data.json';
 
+// Visitor tracking lives in the *shared* kline-data DB, not this project's own
+// bhavpc DB — every site logs hits to the one /ip_details node so any /ip dashboard
+// shows all of them. Plain REST because the SDK `database` above is bound to
+// bhavpc via firebaseConfig.databaseURL and carries the wrong project's auth.
+export const IP_DETAILS_URL = 'https://kline-data-default-rtdb.asia-southeast1.firebasedatabase.app/ip_details.json';
+
+const IP_API = 'https://pro.ip-api.com/json?key=yjfBZPLkt6Kkl3h&fields=58335';
+
+// Visiting any page with ?admin=676510 marks this browser as an admin device for
+// good — the flag rides along on every later /ip_details hit so the kline-data /ip
+// dashboard can filter our own visits out. ?admin=0 clears it again.
+// Kept byte-identical to kline-data's copy: both write the same node.
+const ADMIN_CODE = '676510';
+const ADMIN_KEY = 'admindevice';
+
+// Reads the ?admin= param, updates the stored flag, and returns the current value.
+// Safe to call on every page load; a missing param leaves the flag untouched.
+export const syncAdminDevice = (): boolean => {
+  try {
+    const param = new URLSearchParams(window.location.search).get('admin');
+    if (param === ADMIN_CODE) localStorage.setItem(ADMIN_KEY, 'true');
+    else if (param !== null) localStorage.removeItem(ADMIN_KEY);
+    return localStorage.getItem(ADMIN_KEY) === 'true';
+  } catch {
+    return false;   // storage disabled (private mode / blocked cookies)
+  }
+};
+
+// Geo lookup is best-effort: ip-api.com sits on most ad/tracker blocklists, so a
+// blocked or slow request must not cost us the hit. Returns {geoError} when unavailable.
+const lookupGeo = async (): Promise<Record<string, unknown>> => {
+  try {
+    const r = await fetch(IP_API, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return { geoError: 'http ' + r.status };
+    return await r.json();
+  } catch (e) {
+    // Blocked by an extension (TypeError), timed out (TimeoutError), or offline.
+    return { geoError: e instanceof Error ? e.name : 'blocked' };
+  }
+};
+
 export const trackIPData = async (action: string): Promise<void> => {
   try {
-    const response = await fetch('https://pro.ip-api.com/json?key=yjfBZPLkt6Kkl3h&fields=58335');
-    const ipData = await response.json();
+    // Do this first: a visit that *carries* ?admin=<code> must already be logged
+    // as an admin hit, not just the visits after it.
+    const admindevice = syncAdminDevice();
+    const ipData = await lookupGeo();
 
-    const pageID = 'page_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const pageID = 'page_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
 
     const trackingData = {
       ...ipData,
@@ -85,13 +128,12 @@ export const trackIPData = async (action: string): Promise<void> => {
       viewportHeight: window.innerHeight,
       language: navigator.language,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      admindevice: localStorage.getItem('admindevice') === 'true',
+      admindevice,
     };
 
-    const ipRef = ref(database, '/ip_details');
-    const newRef = push(ipRef);
-    await set(newRef, trackingData);
-    console.log('IP tracking saved:', action);
+    // keepalive: /ip redirects away to the dashboard as soon as the flag is set,
+    // and the hit must survive that navigation.
+    await fetch(IP_DETAILS_URL, { method: 'POST', body: JSON.stringify(trackingData), keepalive: true });
   } catch (e) {
     console.error('Error tracking IP data:', e);
   }

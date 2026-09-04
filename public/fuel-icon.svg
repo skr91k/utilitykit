@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed background so the icon also works as a maskable Android icon;
+       artwork stays inside the middle 80% safe zone. -->
+  <rect width="512" height="512" fill="#121212"/>
+  <g transform="translate(113 109) scale(13.33)" fill="none" stroke="#00bfff" stroke-width="1.6"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- pump body -->
+    <path d="M2 20V4a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/>
+    <path d="M1 20h13"/>
+    <rect x="4.5" y="4.5" width="6" height="5" rx="1" fill="#00bfff" stroke="none"/>
+    <path d="M4.5 13h6M4.5 16h4"/>
+    <!-- filler hose / tank -->
+    <path d="M13 9h2.5a1.5 1.5 0 0 1 1.5 1.5v5a1.5 1.5 0 0 0 3 0V8l-2.5-2.5"/>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+{
+  "id": "/fuel",
+  "name": "Fuel & Trip Tracker",
+  "short_name": "Fuel Log",
+  "description": "Log vehicle trips and fuel expenses — litres, range, distance and history.",
+  "start_url": "/fuel",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#121212",
+  "background_color": "#121212",
+  "icons": [
+    { "src": "/fuel-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/fuel-icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/fuel-icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -1,12 +1,10 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { trackPageView } from '../utils/firebase';
+import { trackPageView, trackIPData } from '../utils/firebase';
 
 const PAGE_NAMES: Record<string, string> = {
   '/': 'Home',
   '/counter': 'Counter',
-  '/pl': 'P&L Dashboard',
-  '/plgraph': 'P&L Graph',
   '/qr': 'QR Code Generator',
   '/encrypt': 'Encryption',
   '/epoch': 'Epoch Converter',
@@ -19,6 +17,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/split': 'Split Expense',
   '/cricket': 'Cricket Tracker',
   '/jwt': 'JWT Decoder',
+  '/ip': 'IP Admin Redirect',
 };
 
 function getPageName(pathname: string): string {
@@ -34,6 +33,9 @@ export function RouteTracker() {
   useEffect(() => {
     const name = getPageName(location.pathname);
     trackPageView(location.pathname + location.search, name);
+    // Every route gets an /ip_details hit — pages must not call trackIPData themselves.
+    // Runs after navigation, so window.location inside it is already the new URL.
+    trackIPData(name);
   }, [location]);
 
   return null;

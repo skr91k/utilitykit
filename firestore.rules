@@ -95,6 +95,16 @@ service cloud.firestore {
       match /pastes/{pasteId} {
         allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
       }
+
+      // Fuel & trip log - only the signed-in Google account that owns it
+      match /fuelTrips/{tripId} {
+        allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
+      }
+
+      // MoneyFlow cash in/out ledger - only the signed-in Google account that owns it
+      match /moneyTransactions/{txnId} {
+        allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
+      }
     }
 
     // ========================================

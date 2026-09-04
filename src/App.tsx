@@ -2,8 +2,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { RouteTracker } from './components/RouteTracker'
 import Home from './pages/Home'
 import Counter from './pages/Counter'
-import { PnLDashboard } from './pages/PnLDashboard'
-import { PnLGraph } from './pages/PnLGraph'
 import { QRCodeGenerator } from './pages/QRCodeGenerator'
 import { Encryption } from './pages/Encryption'
 import { EpochConverter } from './pages/EpochConverter'
@@ -21,6 +19,9 @@ import { TVChart } from './pages/TVChart'
 import { PasteBin } from './pages/PasteBin'
 import { PasteView } from './pages/PasteView'
 import { ZipRepair } from './pages/ZipRepair'
+import { FuelTracker } from './pages/FuelTracker'
+import { IPRedirect } from './pages/IPRedirect'
+import { MoneyFlow } from './pages/MoneyFlow'
 
 function App() {
   return (
@@ -29,8 +30,6 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/counter" element={<Counter />} />
-        <Route path="/pl" element={<PnLDashboard />} />
-        <Route path="/plgraph" element={<PnLGraph />} />
         <Route path="/qr" element={<QRCodeGenerator />} />
         <Route path="/encrypt" element={<Encryption />} />
         <Route path="/epoch" element={<EpochConverter />} />
@@ -50,6 +49,9 @@ function App() {
         <Route path="/paste" element={<PasteBin />} />
         <Route path="/paste/:kind/:id" element={<PasteView />} />
         <Route path="/ziprepair" element={<ZipRepair />} />
+        <Route path="/fuel" element={<FuelTracker />} />
+        <Route path="/ip" element={<IPRedirect />} />
+        <Route path="/money" element={<MoneyFlow />} />
       </Routes>
     </BrowserRouter>
   )
