@@ -24,6 +24,18 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    // Read-only admin console (/admin). Keep this list in sync with
+    // ADMIN_EMAILS in src/utils/adminFirestore.ts. Verified Google sign-in only —
+    // an unverified or anonymous token has no email_verified claim and fails here.
+    function isAdmin() {
+      return isAuthenticated() &&
+             request.auth.token.email_verified == true &&
+             request.auth.token.email in [
+               'emst.shakir@gmail.com',
+               'shakir.kadakkadan@gmail.com'
+             ];
+    }
+
     // ========================================
     // CHAT RULES
     // ========================================
@@ -199,9 +211,14 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && hasEmail() && isOwner(resource.data.ownerUid);
     }
 
-    // Deny all other access by default
+    // Deny all other access by default.
+    // The one exception is the admin console: rules are OR'd across matching
+    // blocks, so this recursive read lets the two admin accounts see every
+    // document in every collection — including any added later — while write
+    // stays denied here for everyone, admins included.
     match /{document=**} {
-      allow read, write: if false;
+      allow read: if isAdmin();
+      allow write: if false;
     }
   }
 }

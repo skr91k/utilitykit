@@ -22,6 +22,7 @@ import { ZipRepair } from './pages/ZipRepair'
 import { FuelTracker } from './pages/FuelTracker'
 import { IPRedirect } from './pages/IPRedirect'
 import { MoneyFlow } from './pages/MoneyFlow'
+import { AdminData } from './pages/AdminData'
 
 function App() {
   return (
@@ -52,6 +53,8 @@ function App() {
         <Route path="/fuel" element={<FuelTracker />} />
         <Route path="/ip" element={<IPRedirect />} />
         <Route path="/money" element={<MoneyFlow />} />
+        {/* Unlisted: read-only Firestore console, admin accounts only. */}
+        <Route path="/admin" element={<AdminData />} />
       </Routes>
     </BrowserRouter>
   )
