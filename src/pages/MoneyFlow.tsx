@@ -89,7 +89,7 @@ interface Txn {
 const METHODS = ['GPay', 'PhonePe', 'Paytm', 'UPI', 'Bank Transfer', 'Cash', 'Card', 'Other']
 
 /** Shown beside the heading — bump on every user-visible change to this page. */
-const VERSION = 'v1.2'
+const VERSION = 'v1.0.1'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -174,14 +174,18 @@ const CHEVRON =
   "viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23344054' " +
   "stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")"
 
-const selectStyle: React.CSSProperties = {
+// Selects only. Date and time inputs are deliberately left alone: Android Chrome
+// paints their picker icon against the border and ignores margin, opacity and
+// display on it, so any chevron of ours lands next to the native one rather than
+// replacing it. They keep the platform arrow at the platform's spacing.
+const arrowStyle: React.CSSProperties = {
   appearance: 'none',
   WebkitAppearance: 'none',
   MozAppearance: 'none',
   backgroundImage: CHEVRON,
   backgroundRepeat: 'no-repeat',
   backgroundPosition: 'right 12px center',
-  // Room for the 12px gap, the 12px chevron, and 10px of breathing space before the text.
+  // Room for the 12px gap, the 12px glyph and 10px of space before the value.
   paddingRight: 34,
 }
 
@@ -738,7 +742,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
             </Field>
 
             <Field label="Payment Method">
-              <select value={form.method} onChange={set('method')} className={inputClass} style={selectStyle}>
+              <select value={form.method} onChange={set('method')} className={inputClass} style={arrowStyle}>
                 {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </Field>
@@ -785,12 +789,12 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
               placeholder="🔎 Search name, phone or method..."
               className={`${inputClass} sm:col-span-2 lg:col-span-1`}
             />
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | TxnType)} className={inputClass} style={selectStyle}>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | TxnType)} className={inputClass} style={arrowStyle}>
               <option value="all">All Types</option>
               <option value="in">Cash In</option>
               <option value="out">Cash Out</option>
             </select>
-            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className={inputClass} style={selectStyle}>
+            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className={inputClass} style={arrowStyle}>
               <option value="all">All Methods</option>
               {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
