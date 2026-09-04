@@ -4,6 +4,7 @@ import { useAuth } from '../utils/useAuth'
 import './Home.css'
 
 const utilities = [
+  { id: 23, icon: '🤖', name: 'Android Apps', path: 'https://play.google.com/store/apps/dev?id=7159728779238553663', description: 'Our apps on Google Play' },
   { id: 22, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
   { id: 21, icon: '⛽', name: 'Fuel & Trip Tracker', path: '/fuel', description: 'Log trips & fuel — litres, range, distance, history & PDF export' },
   { id: 19, icon: '📋', name: 'Paste Bin', path: '/paste', description: 'Public & private pastes — clickable links, copy, edit, remove' },
@@ -31,7 +32,7 @@ const utilities = [
 // Bump this key whenever the default order below changes — it resets everyone's
 // stored click history so the new order actually shows instead of being buried
 // under their old recents.
-const RECENT_CLICKS_KEY = 'utilityRecentClicks_v4'
+const RECENT_CLICKS_KEY = 'utilityRecentClicks_v5'
 
 function Home() {
   const { user, loading, login, logout, loginAnonymous } = useAuth()

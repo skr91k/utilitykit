@@ -89,7 +89,7 @@ interface Txn {
 const METHODS = ['GPay', 'PhonePe', 'Paytm', 'UPI', 'Bank Transfer', 'Cash', 'Card', 'Other']
 
 /** Shown beside the heading — bump on every user-visible change to this page. */
-const VERSION = 'v1.1'
+const VERSION = 'v1.2'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -162,6 +162,28 @@ const PRINT_CSS = `
 const inputClass =
   'w-full p-2.5 rounded-lg border border-[#d0d5dd] bg-white text-[#172033] text-sm ' +
   'focus:outline-none focus:border-[#2563eb] focus:ring-3 focus:ring-[#2563eb]/10 transition-colors'
+
+// The native dropdown arrow is painted against the border box and ignores
+// padding-right, so it always sits flush with the edge. Turning the native
+// appearance off and drawing our own chevron as a background image is the only
+// way to control the gap — background-position puts it 12px in from the border.
+// Inline, so it beats the unlayered element rules in index.css, which sit outside
+// Tailwind's layers and therefore win over any utility class.
+const CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' " +
+  "viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23344054' " +
+  "stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")"
+
+const selectStyle: React.CSSProperties = {
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  backgroundImage: CHEVRON,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 12px center',
+  // Room for the 12px gap, the 12px chevron, and 10px of breathing space before the text.
+  paddingRight: 34,
+}
 
 function Field({
   label, hint, children,
@@ -256,12 +278,24 @@ function useMoneyManifest() {
 
 /**
  * The header's single ⋮ control. Everything that used to sit exposed in the
- * header — the account and the "Add to Home screen" action — lives in here, so
- * the title row keeps its full width on a phone.
+ * header — the account, the "Add to Home screen" action, the PDF export and the
+ * way back to the utilities index — lives in here, so the title row keeps its
+ * full width on a phone.
  */
-function HeaderMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
+function HeaderMenu({
+  user,
+  onLogout,
+  onDownloadPdf,
+  canDownload,
+}: {
+  user: User
+  onLogout: () => void
+  onDownloadPdf?: () => void
+  canDownload?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [help, setHelp] = useState(false)
+  const [reloading, setReloading] = useState(false)
   const [canInstall, setCanInstall] = useState(() => deferredInstall !== null)
   // Launched from the home screen already — the install item has nothing to do.
   const [installed] = useState(isStandalone)
@@ -288,6 +322,31 @@ function HeaderMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  /**
+   * A real hard reload. The app precaches its own shell in a service worker, so a
+   * plain reload — and even ⌘⇧R — is answered from that cache and keeps serving
+   * the previous deploy. Dropping the registration and the cache entries first is
+   * what actually forces the newest build off the network. The service worker
+   * re-registers by itself once the fresh page loads.
+   */
+  const hardReload = async () => {
+    setReloading(true)
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      }
+    } catch (err) {
+      // Never leave the user stuck on a spinner — reload regardless.
+      console.error('Clearing the app cache failed:', err)
+    }
+    window.location.reload()
+  }
 
   const addToHome = async () => {
     if (!deferredInstall) {
@@ -343,12 +402,35 @@ function HeaderMenu({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
 
           <div className="p-1.5">
+            {onDownloadPdf && (
+              <button
+                onClick={() => { setOpen(false); onDownloadPdf() }}
+                disabled={!canDownload}
+                className={`${itemClass} disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent!`}
+              >
+                <span aria-hidden="true">🧾</span>
+                <span>Download PDF</span>
+              </button>
+            )}
             {!installed && (
               <button onClick={addToHome} className={itemClass}>
                 <span aria-hidden="true">📲</span>
                 <span>{canInstall ? 'Add to Home screen' : 'Add to Home screen…'}</span>
               </button>
             )}
+            <button
+              onClick={hardReload}
+              disabled={reloading}
+              title="Clears the cached app shell and reloads the newest version"
+              className={`${itemClass} disabled:opacity-60`}
+            >
+              <span aria-hidden="true">🔄</span>
+              <span>{reloading ? 'Reloading…' : 'Force reload'}</span>
+            </button>
+            <Link to="/" onClick={() => setOpen(false)} className={`${itemClass} no-underline!`}>
+              <span aria-hidden="true">←</span>
+              <span>Back to Utilities</span>
+            </Link>
             <button
               onClick={() => { setOpen(false); onLogout() }}
               className={`${itemClass} text-[#b91c1c]! hover:bg-[#fef2f2]!`}
@@ -392,7 +474,7 @@ export function MoneyFlow() {
   if (loading) {
     return (
       <div id="moneyflow-root" className="min-h-screen bg-[#f3f6fb] text-[#667085] flex items-center justify-center text-sm">
-        Checking your session…
+        Loading...
       </div>
     )
   }
@@ -593,15 +675,16 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
             </h1>
             <p className="mt-1 mb-0 truncate text-[13px] text-[#dbeafe]">Personal Cash In &amp; Out Manager</p>
           </div>
-          <HeaderMenu user={user} onLogout={onLogout} />
+          <HeaderMenu
+            user={user}
+            onLogout={onLogout}
+            onDownloadPdf={() => window.print()}
+            canDownload={txns.length > 0}
+          />
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-[1100px] p-4 pb-10">
-        <div className="no-print mb-3">
-          <Link to="/" className="text-[#667085] text-sm hover:text-[#2563eb]">← Back to Utilities</Link>
-        </div>
-
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <SummaryCard label="Total Cash In" value={money(totals.cashIn)} accent="text-[#16a34a]" bar="#16a34a" />
           <SummaryCard label="Total Cash Out" value={money(totals.cashOut)} accent="text-[#dc2626]" bar="#dc2626" />
@@ -613,8 +696,9 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
           onSubmit={submit}
           className="no-print rounded-2xl bg-white p-4 sm:p-5 mb-4 shadow-[0_12px_35px_rgba(15,23,42,.07)]"
         >
-          <h2 className="mb-3.5">
-            {editId ? '✏️ Edit Transaction' : '➕ Add Transaction'}
+          <h2 className="flex items-center gap-2" style={{ marginTop: 0, marginBottom: 14 }}>
+            <span aria-hidden="true">{editId ? '✏️' : '➕'}</span>
+            <span>{editId ? 'Edit Transaction' : 'Add Transaction'}</span>
           </h2>
 
           <div className="grid grid-cols-2 gap-2 mb-3.5">
@@ -654,7 +738,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
             </Field>
 
             <Field label="Payment Method">
-              <select value={form.method} onChange={set('method')} className={inputClass}>
+              <select value={form.method} onChange={set('method')} className={inputClass} style={selectStyle}>
                 {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </Field>
@@ -701,12 +785,12 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
               placeholder="🔎 Search name, phone or method..."
               className={`${inputClass} sm:col-span-2 lg:col-span-1`}
             />
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | TxnType)} className={inputClass}>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | TxnType)} className={inputClass} style={selectStyle}>
               <option value="all">All Types</option>
               <option value="in">Cash In</option>
               <option value="out">Cash Out</option>
             </select>
-            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className={inputClass}>
+            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className={inputClass} style={selectStyle}>
               <option value="all">All Methods</option>
               {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
