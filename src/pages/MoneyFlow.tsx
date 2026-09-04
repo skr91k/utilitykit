@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { initializeApp, getApps } from 'firebase/app'
 import {
@@ -11,10 +11,13 @@ import {
   setDoc,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
+  Bytes,
 } from 'firebase/firestore'
+import { compressImage } from '../utils/compressImage'
 import { useAuth } from '../utils/useAuth'
 import type { User } from '../utils/firebase'
 import { firebaseConfig } from '../utils/firebaseConfig'
@@ -40,6 +43,12 @@ const txnCollection = (uid: string) => collection(db, 'users', uid, 'moneyTransa
 
 /** Page-scoped manifest — makes the home-screen icon open /money, not the app root. */
 const MONEY_MANIFEST = '/money.webmanifest'
+
+// Handover point for Android's share sheet. These three must stay in step with
+// public/share-handler.js, which is what actually receives the POST.
+const SHARE_CACHE = 'money-share-inbox'
+const SHARE_KEY = '/__shared-receipt'
+const SHARE_FLAG = 'shared'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -84,7 +93,53 @@ interface Txn {
   time: string
   method: string
   createdAt: number
+  /** Whether a receipt image lives at moneyReceipts/{id}. Bytes are fetched on demand. */
+  hasReceipt?: boolean
 }
+
+interface ReceiptDoc {
+  bytes: Bytes
+  mime: string
+  size: number
+  createdAt: number
+}
+
+/**
+ * What the form is holding. A freshly picked or shared image carries its blob;
+ * an edit of a transaction that already has one only needs to remember that it
+ * is there, so the bytes are never fetched just to leave them alone.
+ */
+type PendingReceipt =
+  | { kind: 'new'; blob: Blob; url: string }
+  | { kind: 'stored' }
+
+/**
+ * Receipts are kept in their own collection rather than on the transaction.
+ * The ledger subscribes to every transaction with onSnapshot, so an inline blob
+ * would be re-downloaded for the whole history on each sync and each cold start;
+ * out here the bytes are only read when someone actually opens one.
+ */
+const receiptDoc = (uid: string, txnId: string) => doc(db, 'users', uid, 'moneyReceipts', txnId)
+
+async function saveReceipt(uid: string, txnId: string, blob: Blob) {
+  const buffer = await blob.arrayBuffer()
+  await setDoc(receiptDoc(uid, txnId), {
+    bytes: Bytes.fromUint8Array(new Uint8Array(buffer)),
+    mime: blob.type || 'image/jpeg',
+    size: blob.size,
+    createdAt: Date.now(),
+  })
+}
+
+async function loadReceipt(uid: string, txnId: string): Promise<Blob | null> {
+  const snap = await getDoc(receiptDoc(uid, txnId))
+  const data = snap.data() as ReceiptDoc | undefined
+  if (!data?.bytes) return null
+  return new Blob([data.bytes.toUint8Array() as BlobPart], { type: data.mime || 'image/jpeg' })
+}
+
+/** Deleting a receipt that was never there is a no-op, so callers need not check. */
+const deleteReceipt = (uid: string, txnId: string) => deleteDoc(receiptDoc(uid, txnId))
 
 const METHODS = ['GPay', 'PhonePe', 'Paytm', 'UPI', 'Bank Transfer', 'Cash', 'Card', 'Other']
 
@@ -187,6 +242,143 @@ const arrowStyle: React.CSSProperties = {
   backgroundPosition: 'right 12px center',
   // Room for the 12px gap, the 12px glyph and 10px of space before the value.
   paddingRight: 34,
+}
+
+const MIN_ZOOM = 1
+const MAX_ZOOM = 6
+
+/**
+ * Full-screen receipt viewer with pinch, wheel and drag zoom.
+ *
+ * Pointer events cover mouse and touch in one path: a single active pointer
+ * pans, two pointers pinch around their midpoint. Panning is clamped only by
+ * taste, not by the image bounds — a receipt read at 6x is easier to move
+ * around freely than to fight back inside an edge.
+ */
+function ReceiptViewer({ src, onClose }: { src: string; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  // Whether a finger or the mouse is currently down. State rather than a ref
+  // because the transform's transition is switched off while dragging, and that
+  // has to survive a render.
+  const [interacting, setInteracting] = useState(false)
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinchStart = useRef<{ distance: number; zoom: number } | null>(null)
+
+  const reset = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === '0') reset()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose, reset])
+
+  const clamp = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value))
+
+  const zoomBy = (factor: number) =>
+    setZoom(z => {
+      const next = clamp(z * factor)
+      // Snapping back to 1x should also recentre, or the image drifts off screen.
+      if (next === 1) setPan({ x: 0, y: 0 })
+      return next
+    })
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    setInteracting(true)
+  }
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const active = pointers.current
+    if (!active.has(e.pointerId)) return
+    const previous = active.get(e.pointerId)!
+    active.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    const points = [...active.values()]
+    if (points.length >= 2) {
+      const [a, b] = points
+      const distance = Math.hypot(a.x - b.x, a.y - b.y)
+      if (!pinchStart.current) {
+        pinchStart.current = { distance, zoom }
+        return
+      }
+      const ratio = distance / pinchStart.current.distance
+      setZoom(clamp(pinchStart.current.zoom * ratio))
+      return
+    }
+
+    pinchStart.current = null
+    // A drag at 1x does nothing — there is no overflow to reveal.
+    if (zoom === 1) return
+    setPan(p => ({ x: p.x + (e.clientX - previous.x), y: p.y + (e.clientY - previous.y) }))
+  }
+
+  const endPointer = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinchStart.current = null
+    if (pointers.current.size === 0) setInteracting(false)
+  }
+
+  const onWheel = (e: React.WheelEvent) => {
+    zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15)
+  }
+
+  const button =
+    'h-9 min-w-9 px-3 rounded-lg bg-white/15! text-white! border-transparent! text-sm ' +
+    'font-semibold cursor-pointer hover:bg-white/25!'
+
+  return (
+    <div
+      className="no-print fixed inset-0 z-50 flex flex-col bg-black/90"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Receipt"
+    >
+      <div className="flex items-center justify-between gap-2 p-3 text-white">
+        <span className="text-sm font-semibold">Receipt · {Math.round(zoom * 100)}%</span>
+        <div className="flex gap-2">
+          <button onClick={() => zoomBy(1 / 1.4)} className={button} aria-label="Zoom out">−</button>
+          <button onClick={() => zoomBy(1.4)} className={button} aria-label="Zoom in">+</button>
+          <button onClick={reset} className={button}>Reset</button>
+          <button onClick={onClose} className={button} aria-label="Close">✕</button>
+        </div>
+      </div>
+
+      <div
+        className="flex-1 overflow-hidden flex items-center justify-center"
+        style={{ touchAction: 'none', cursor: zoom > 1 ? 'grab' : 'default' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+        onWheel={onWheel}
+        onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+      >
+        <img
+          src={src}
+          alt="Receipt"
+          draggable={false}
+          className="max-h-full max-w-full select-none"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: 'center',
+            transition: interacting ? 'none' : 'transform .12s ease-out',
+          }}
+        />
+      </div>
+
+      <p className="m-0 p-3 text-center text-xs text-white/60">
+        Pinch, scroll or double-tap to zoom · drag to move
+      </p>
+    </div>
+  )
 }
 
 function Field({
@@ -501,6 +693,45 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
   const [typeFilter, setTypeFilter] = useState<'all' | TxnType>('all')
   const [methodFilter, setMethodFilter] = useState('all')
 
+  // The receipt on the form right now. `null` means "no receipt" — which, while
+  // editing a transaction that has one stored, is what tells submit to delete it.
+  const [receipt, setReceipt] = useState<PendingReceipt | null>(null)
+  const [attaching, setAttaching] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  // The receipt being viewed full-screen. `owned` marks a URL the viewer created
+  // and must revoke; a preview borrowed from the form is left alone, since the
+  // form is still rendering it.
+  const [viewing, setViewing] = useState<{ url: string; owned: boolean } | null>(null)
+  const [loadingView, setLoadingView] = useState<string | null>(null)
+
+  /** Object URLs are revoked by hand — nothing else releases the blob. */
+  const clearReceipt = useCallback(() => {
+    setReceipt(current => {
+      if (current?.kind === 'new') URL.revokeObjectURL(current.url)
+      return null
+    })
+  }, [])
+
+  /** Compresses a picked or shared image and parks it on the form. */
+  const attachImage = useCallback(async (file: Blob) => {
+    setAttaching(true)
+    setError('')
+    try {
+      const { blob } = await compressImage(file)
+      const url = URL.createObjectURL(blob)
+      setReceipt(current => {
+        if (current?.kind === 'new') URL.revokeObjectURL(current.url)
+        return { kind: 'new', blob, url }
+      })
+    } catch (err) {
+      console.error('Compressing the receipt failed:', err)
+      setError(err instanceof Error ? err.message : 'That image could not be attached.')
+    } finally {
+      setAttaching(false)
+    }
+  }, [])
+
   // Firestore is the single source of truth — nothing is kept in localStorage.
   // The persistent cache above keeps the ledger readable across refreshes and offline.
   useEffect(() => {
@@ -519,6 +750,45 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     )
     return () => unsubscribe()
   }, [uid])
+
+  // An image shared from another Android app lands in Cache Storage (the service
+  // worker cannot hand a file to a page any other way — see public/share-handler.js)
+  // and the browser is redirected here with ?shared=1. Collect it once, then tidy
+  // both the cache entry and the URL so a refresh does not re-attach it.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has(SHARE_FLAG)) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const cache = await caches.open(SHARE_CACHE)
+        const stored = await cache.match(SHARE_KEY)
+        await cache.delete(SHARE_KEY)
+        if (stored && !cancelled) {
+          await attachImage(await stored.blob())
+          flash('✓ Shared image attached — fill in the details and save')
+        }
+      } catch (err) {
+        console.error('Reading the shared image failed:', err)
+      } finally {
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [attachImage])
+
+  // Object URLs held by the form or the viewer outlive React's own cleanup.
+  useEffect(() => () => {
+    setReceipt(current => {
+      if (current?.kind === 'new') URL.revokeObjectURL(current.url)
+      return null
+    })
+    setViewing(current => {
+      if (current?.owned) URL.revokeObjectURL(current.url)
+      return null
+    })
+  }, [])
 
   const FILTERS: Partial<Record<keyof Form, (v: string) => string>> = {
     phone: cleanPhone,
@@ -543,6 +813,8 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     setEditId(null)
     setForm(emptyForm())
     setError('')
+    clearReceipt()
+    if (fileInput.current) fileInput.current.value = ''
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -556,6 +828,8 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     if (!form.time) return setError('Pick a time.')
 
     const editing = editId
+    // Captured before the form is cleared below, which drops the reference.
+    const attached = receipt
     const payload: Omit<Txn, 'id' | 'createdAt'> = {
       type: form.type,
       name,
@@ -564,14 +838,18 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
       date: form.date,
       time: form.time,
       method: form.method,
+      hasReceipt: attached !== null,
     }
 
     // Keep the type and payment method — consecutive entries usually share them.
     setForm(f => ({ ...emptyForm(), type: f.type, method: f.method, date: f.date }))
     setEditId(null)
+    setReceipt(null) // Not clearReceipt(): the blob is still needed by the write below.
+    if (fileInput.current) fileInput.current.value = ''
     flash(editing ? '✓ Transaction updated' : '✓ Transaction saved to your account')
 
     try {
+      let id = editing
       if (editing) {
         const existing = txns.find(t => t.id === editing)
         await setDoc(doc(db, 'users', uid, 'moneyTransactions', editing), {
@@ -579,12 +857,24 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
           createdAt: existing?.createdAt ?? Date.now(),
         })
       } else {
-        await addDoc(txnCollection(uid), { ...payload, createdAt: Date.now() })
+        id = (await addDoc(txnCollection(uid), { ...payload, createdAt: Date.now() })).id
+      }
+
+      // The receipt is written second, so a transaction never points at bytes
+      // that failed to save. Removing one is just as explicit: an edit that ends
+      // with no receipt deletes whatever was stored.
+      if (id) {
+        if (attached?.kind === 'new') await saveReceipt(uid, id, attached.blob)
+        else if (!attached && editing && txns.find(t => t.id === editing)?.hasReceipt) {
+          await deleteReceipt(uid, editing)
+        }
       }
     } catch (err) {
       console.error('Saving transaction failed:', err)
       setNotice('')
       setError('Could not save to the cloud. Check your connection and try again.')
+    } finally {
+      if (attached?.kind === 'new') URL.revokeObjectURL(attached.url)
     }
   }
 
@@ -600,14 +890,48 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
       time: t.time,
     })
     setError('')
+    clearReceipt()
+    if (t.hasReceipt) setReceipt({ kind: 'stored' })
+    if (fileInput.current) fileInput.current.value = ''
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  /** Fetches a stored receipt and opens the viewer. */
+  const openReceipt = async (txnId: string) => {
+    setLoadingView(txnId)
+    try {
+      const blob = await loadReceipt(uid, txnId)
+      if (!blob) {
+        setError('That receipt could not be found.')
+        return
+      }
+      setViewing({ url: URL.createObjectURL(blob), owned: true })
+    } catch (err) {
+      console.error('Loading the receipt failed:', err)
+      setError('Could not load that receipt. Check your connection.')
+    } finally {
+      setLoadingView(null)
+    }
+  }
+
+  const closeViewer = () => {
+    setViewing(current => {
+      if (current?.owned) URL.revokeObjectURL(current.url)
+      return null
+    })
   }
 
   const remove = async (id: string) => {
     if (!confirm('Delete this transaction permanently?')) return
     if (editId === id) resetForm()
     try {
-      await deleteDoc(doc(db, 'users', uid, 'moneyTransactions', id))
+      // The receipt goes too — nothing else references it once the row is gone.
+      // Only when there is one: a delete of a missing document still costs a write.
+      const hadReceipt = txns.find(t => t.id === id)?.hasReceipt
+      await Promise.all([
+        deleteDoc(doc(db, 'users', uid, 'moneyTransactions', id)),
+        ...(hadReceipt ? [deleteReceipt(uid, id)] : []),
+      ])
     } catch (err) {
       console.error('Deleting transaction failed:', err)
       setError('Could not delete that transaction.')
@@ -617,7 +941,12 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
   const clearAll = async () => {
     if (!confirm(`Delete all ${txns.length} transactions from your account? This cannot be undone.`)) return
     try {
-      await Promise.all(txns.map(t => deleteDoc(doc(db, 'users', uid, 'moneyTransactions', t.id))))
+      await Promise.all(
+        txns.flatMap(t => [
+          deleteDoc(doc(db, 'users', uid, 'moneyTransactions', t.id)),
+          ...(t.hasReceipt ? [deleteReceipt(uid, t.id)] : []),
+        ]),
+      )
       resetForm()
     } catch (err) {
       console.error('Clearing transactions failed:', err)
@@ -756,6 +1085,84 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
             </Field>
           </div>
 
+          <div className="mt-3">
+            <label className="block text-[13px] font-semibold text-[#344054] mb-1.5">
+              Receipt <span className="font-normal text-[#98a2b3]">(optional)</span>
+            </label>
+
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) attachImage(file)
+              }}
+            />
+
+            {receipt === null ? (
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                disabled={attaching}
+                className="w-full rounded-lg border border-dashed border-[#d0d5dd] bg-[#f8fafc]! p-3 text-sm text-[#475467]! cursor-pointer hover:border-[#2563eb] disabled:opacity-60"
+              >
+                {attaching ? 'Preparing image…' : '📎 Attach a photo of the receipt'}
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 rounded-lg border border-[#e6eaf0] bg-[#f8fafc] p-2.5">
+                {receipt.kind === 'new' ? (
+                  <img
+                    src={receipt.url}
+                    alt="Receipt preview"
+                    className="h-14 w-14 shrink-0 rounded-md object-cover border border-[#e6eaf0]"
+                  />
+                ) : (
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-[#e6eaf0] bg-white text-2xl">
+                    🧾
+                  </span>
+                )}
+
+                <div className="min-w-0 flex-1 text-sm">
+                  <div className="font-semibold text-[#172033]">
+                    {receipt.kind === 'new' ? 'Ready to save' : 'Receipt attached'}
+                  </div>
+                  <div className="text-xs text-[#667085]">
+                    {receipt.kind === 'new'
+                      ? `${Math.round(receipt.blob.size / 1024)} KB · JPEG`
+                      : 'Stored with this transaction'}
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      receipt.kind === 'new'
+                        ? setViewing({ url: receipt.url, owned: false })
+                        : editId && openReceipt(editId)
+                    }
+                    disabled={loadingView !== null}
+                    className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-[#e0e7ff]! text-[#3730a3]! cursor-pointer disabled:opacity-50"
+                  >
+                    {loadingView ? '…' : 'View'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearReceipt()
+                      if (fileInput.current) fileInput.current.value = ''
+                    }}
+                    className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-[#fee2e2]! text-[#b91c1c]! cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {error && (
             <div className="mt-4 p-3 rounded-lg bg-[#fee2e2] border border-[#fca5a5] text-[#b91c1c] text-sm">
               {error}
@@ -872,6 +1279,15 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
                         >
                           Edit
                         </button>
+                        {t.hasReceipt && (
+                          <button
+                            onClick={() => openReceipt(t.id)}
+                            disabled={loadingView === t.id}
+                            className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-[#f1f5f9]! text-[#334155]! cursor-pointer disabled:opacity-50"
+                          >
+                            {loadingView === t.id ? 'Loading…' : '🧾 Receipt'}
+                          </button>
+                        )}
                         <button
                           onClick={() => remove(t.id)}
                           className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-[#fee2e2]! text-[#b91c1c]! cursor-pointer"
@@ -919,6 +1335,17 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
                             >
                               Edit
                             </button>{' '}
+                            {t.hasReceipt && (
+                              <>
+                                <button
+                                  onClick={() => openReceipt(t.id)}
+                                  disabled={loadingView === t.id}
+                                  className="px-2 py-1.5 rounded-md text-[11px] font-bold bg-[#f1f5f9]! text-[#334155]! cursor-pointer disabled:opacity-50"
+                                >
+                                  {loadingView === t.id ? '…' : '🧾'}
+                                </button>{' '}
+                              </>
+                            )}
                             <button
                               onClick={() => remove(t.id)}
                               className="px-2 py-1.5 rounded-md text-[11px] font-bold bg-[#fee2e2]! text-[#b91c1c]! cursor-pointer"
@@ -952,8 +1379,11 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
 
         <p className="no-print mt-4 text-center text-xs text-[#98a2b3]">
           "Download PDF" opens your browser's print dialog — choose <b>Save as PDF</b> as the destination.
+          Receipts are not included in the report.
         </p>
       </div>
+
+      {viewing && <ReceiptViewer src={viewing.url} onClose={closeViewer} />}
     </div>
   )
 }

@@ -117,6 +117,19 @@ service cloud.firestore {
       match /moneyTransactions/{txnId} {
         allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
       }
+
+      // Receipt images, one document per transaction id. Kept out of the ledger
+      // documents so the collection listener never pulls image bytes; read only
+      // when someone opens a receipt.
+      match /moneyReceipts/{txnId} {
+        allow read, delete: if isAuthenticated() && hasEmail() && isOwner(userId);
+        // Belt and braces against a runaway write: Firestore's own ceiling is
+        // 1 MiB per document and the client compresses to ~500 KB. size() on a
+        // bytes value counts bytes (on a map it would count keys).
+        allow create, update: if isAuthenticated() && hasEmail() && isOwner(userId)
+                              && request.resource.data.bytes is bytes
+                              && request.resource.data.bytes.size() < 900000;
+      }
     }
 
     // ========================================

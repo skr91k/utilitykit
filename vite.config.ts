@@ -13,6 +13,9 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB — bundle is ~2.2 MB
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // MoneyFlow's Web Share Target handler. generateSW writes the worker for
+        // us, so a custom fetch listener has to arrive this way.
+        importScripts: ['/share-handler.js'],
         // Return cached app shell for any navigation (SPA fallback)
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
