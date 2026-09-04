@@ -50,6 +50,38 @@ const SHARE_CACHE = 'money-share-inbox'
 const SHARE_KEY = '/__shared-receipt'
 const SHARE_FLAG = 'shared'
 
+const DRAFT_KEY = 'moneyflow:draft'
+/** Older than this and the half-filled form is stale enough to be noise. */
+const DRAFT_MAX_AGE = 2 * 60 * 60 * 1000
+
+interface Draft {
+  form: Form
+  editId: string | null
+  storedReceipt: boolean
+  at: number
+}
+
+/**
+ * Accepting a share is a fresh navigation to /money?shared=1, so anything typed
+ * into the form is gone by the time the image arrives. The draft is mirrored to
+ * localStorage on every keystroke purely to survive that one hop, and is only
+ * read back when the share flag is present — an ordinary visit always starts on
+ * a clean form, which is what the rest of the page assumes.
+ */
+function readDraft(): Draft | null {
+  try {
+    if (!new URLSearchParams(window.location.search).has(SHARE_FLAG)) return null
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const draft = JSON.parse(raw) as Draft
+    if (!draft?.form || Date.now() - draft.at > DRAFT_MAX_AGE) return null
+    return draft
+  } catch {
+    // Private mode, disabled storage, or a shape from an older build.
+    return null
+  }
+}
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
@@ -682,8 +714,12 @@ export function MoneyFlow() {
 }
 
 function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: () => void }) {
-  const [form, setForm] = useState<Form>(emptyForm)
-  const [editId, setEditId] = useState<string | null>(null)
+  // Read once, synchronously, so the restored values are the initial state and
+  // no effect ordering can overwrite them with a blank form first.
+  const [draft] = useState(readDraft)
+
+  const [form, setForm] = useState<Form>(() => draft?.form ?? emptyForm())
+  const [editId, setEditId] = useState<string | null>(draft?.editId ?? null)
   const [txns, setTxns] = useState<Txn[]>([])
   const [syncing, setSyncing] = useState(true)
   const [error, setError] = useState('')
@@ -695,7 +731,11 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
 
   // The receipt on the form right now. `null` means "no receipt" — which, while
   // editing a transaction that has one stored, is what tells submit to delete it.
-  const [receipt, setReceipt] = useState<PendingReceipt | null>(null)
+  // Restoring the stored marker across a share matters: without it, saving the
+  // restored edit would read as "receipt removed" and delete the stored image.
+  const [receipt, setReceipt] = useState<PendingReceipt | null>(
+    draft?.storedReceipt ? { kind: 'stored' } : null,
+  )
   const [attaching, setAttaching] = useState(false)
   // Two inputs rather than one: `capture` cannot be toggled per click, and an
   // input carrying it always goes straight to the camera, never the gallery.
@@ -707,6 +747,23 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
   // form is still rendering it.
   const [viewing, setViewing] = useState<{ url: string; owned: boolean } | null>(null)
   const [loadingView, setLoadingView] = useState<string | null>(null)
+
+  // Mirrored on every change so a share can hand the form straight back. Only
+  // ever read again when returning with the share flag — see readDraft. The blob
+  // of a freshly picked image is not stored; only the fact that a saved one exists.
+  useEffect(() => {
+    try {
+      const draftNow: Draft = {
+        form,
+        editId,
+        storedReceipt: receipt?.kind === 'stored',
+        at: Date.now(),
+      }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draftNow))
+    } catch {
+      // Private mode or a full quota. A lost draft is not worth interrupting anyone.
+    }
+  }, [form, editId, receipt])
 
   /**
    * Both file inputs are cleared together: a browser fires no change event when
@@ -745,8 +802,9 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     }
   }, [])
 
-  // Firestore is the single source of truth — nothing is kept in localStorage.
-  // The persistent cache above keeps the ledger readable across refreshes and offline.
+  // Firestore is the single source of truth for saved transactions — localStorage
+  // holds nothing but the unsaved form draft above. The persistent cache keeps the
+  // ledger readable across refreshes and offline.
   useEffect(() => {
     const q = query(txnCollection(uid), orderBy('createdAt', 'desc'))
     const unsubscribe = onSnapshot(
