@@ -697,13 +697,26 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
   // editing a transaction that has one stored, is what tells submit to delete it.
   const [receipt, setReceipt] = useState<PendingReceipt | null>(null)
   const [attaching, setAttaching] = useState(false)
+  // Two inputs rather than one: `capture` cannot be toggled per click, and an
+  // input carrying it always goes straight to the camera, never the gallery.
   const fileInput = useRef<HTMLInputElement>(null)
+  const cameraInput = useRef<HTMLInputElement>(null)
 
   // The receipt being viewed full-screen. `owned` marks a URL the viewer created
   // and must revoke; a preview borrowed from the form is left alone, since the
   // form is still rendering it.
   const [viewing, setViewing] = useState<{ url: string; owned: boolean } | null>(null)
   const [loadingView, setLoadingView] = useState<string | null>(null)
+
+  /**
+   * Both file inputs are cleared together: a browser fires no change event when
+   * the same file is picked twice running, so a stale value would silently block
+   * re-attaching a photo that was just removed.
+   */
+  const resetFileInputs = useCallback(() => {
+    if (fileInput.current) fileInput.current.value = ''
+    if (cameraInput.current) cameraInput.current.value = ''
+  }, [])
 
   /** Object URLs are revoked by hand — nothing else releases the blob. */
   const clearReceipt = useCallback(() => {
@@ -814,7 +827,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     setForm(emptyForm())
     setError('')
     clearReceipt()
-    if (fileInput.current) fileInput.current.value = ''
+    resetFileInputs()
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -845,7 +858,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     setForm(f => ({ ...emptyForm(), type: f.type, method: f.method, date: f.date }))
     setEditId(null)
     setReceipt(null) // Not clearReceipt(): the blob is still needed by the write below.
-    if (fileInput.current) fileInput.current.value = ''
+    resetFileInputs()
     flash(editing ? '✓ Transaction updated' : '✓ Transaction saved to your account')
 
     try {
@@ -892,7 +905,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
     setError('')
     clearReceipt()
     if (t.hasReceipt) setReceipt({ kind: 'stored' })
-    if (fileInput.current) fileInput.current.value = ''
+    resetFileInputs()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -1100,16 +1113,39 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
                 if (file) attachImage(file)
               }}
             />
+            {/* capture="environment" asks for the rear camera. Desktop browsers
+                ignore it and fall back to an ordinary file dialog. */}
+            <input
+              ref={cameraInput}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) attachImage(file)
+              }}
+            />
 
             {receipt === null ? (
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                disabled={attaching}
-                className="w-full rounded-lg border border-dashed border-[#d0d5dd] bg-[#f8fafc]! p-3 text-sm text-[#475467]! cursor-pointer hover:border-[#2563eb] disabled:opacity-60"
-              >
-                {attaching ? 'Preparing image…' : '📎 Attach a photo of the receipt'}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInput.current?.click()}
+                  disabled={attaching}
+                  className="rounded-lg border border-dashed border-[#d0d5dd] bg-[#f8fafc]! p-3 text-sm text-[#475467]! cursor-pointer hover:border-[#2563eb] disabled:opacity-60"
+                >
+                  {attaching ? 'Preparing…' : '📷 Take photo'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={attaching}
+                  className="rounded-lg border border-dashed border-[#d0d5dd] bg-[#f8fafc]! p-3 text-sm text-[#475467]! cursor-pointer hover:border-[#2563eb] disabled:opacity-60"
+                >
+                  {attaching ? 'Preparing…' : '🖼️ Choose image'}
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-3 rounded-lg border border-[#e6eaf0] bg-[#f8fafc] p-2.5">
                 {receipt.kind === 'new' ? (
@@ -1152,7 +1188,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
                     type="button"
                     onClick={() => {
                       clearReceipt()
-                      if (fileInput.current) fileInput.current.value = ''
+                      resetFileInputs()
                     }}
                     className="px-2.5 py-1.5 rounded-md text-[11px] font-bold bg-[#fee2e2]! text-[#b91c1c]! cursor-pointer"
                   >

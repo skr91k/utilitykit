@@ -28,9 +28,68 @@ export interface CompressedImage {
 type Source = ImageBitmap | HTMLImageElement
 
 /**
+ * Identifies the container from its leading bytes. A file handed over by an
+ * Android picker often arrives with an empty or wrong `type`, so the header is
+ * more trustworthy than the metadata — and HEIC needs naming explicitly, since
+ * no browser can decode it and the user has to be told why.
+ */
+function sniff(buffer: ArrayBuffer): { mime: string; heic: boolean } {
+  const head = new Uint8Array(buffer.slice(0, 16))
+  const ascii = (from: number, to: number) =>
+    String.fromCharCode(...head.slice(from, to)).toLowerCase()
+
+  if (head[0] === 0xff && head[1] === 0xd8) return { mime: 'image/jpeg', heic: false }
+  if (head[0] === 0x89 && ascii(1, 4) === 'png') return { mime: 'image/png', heic: false }
+  if (ascii(0, 4) === 'gif8') return { mime: 'image/gif', heic: false }
+  if (ascii(0, 4) === 'riff' && ascii(8, 12) === 'webp') return { mime: 'image/webp', heic: false }
+
+  // ISO base media: box size, then 'ftyp', then a four-character brand.
+  if (ascii(4, 8) === 'ftyp') {
+    const brand = ascii(8, 12)
+    const heic = ['heic', 'heix', 'hevc', 'heim', 'heis', 'mif1', 'msf1', 'heif'].includes(brand)
+    return { mime: heic ? 'image/heic' : 'image/*', heic }
+  }
+
+  return { mime: '', heic: false }
+}
+
+/**
+ * Pulls the bytes out of whatever the picker returned and re-wraps them.
+ *
+ * Reading the buffer up front forces an Android content provider to actually
+ * produce the file — a cloud-only Google Photos item can otherwise hand over a
+ * Blob that decodes to nothing — and lets the real type be recovered from the
+ * header when the picker did not supply one.
+ */
+async function materialize(file: Blob): Promise<Blob> {
+  let buffer: ArrayBuffer
+  try {
+    buffer = await file.arrayBuffer()
+  } catch {
+    throw new Error(
+      'That image could not be read from storage. If it lives in Google Photos, ' +
+        'download it to the device first, then attach it.',
+    )
+  }
+
+  if (!buffer.byteLength) {
+    throw new Error('That file came back empty. Try picking it again, or take a fresh photo.')
+  }
+
+  const { mime, heic } = sniff(buffer)
+  if (heic) {
+    throw new Error(
+      'That photo is in HEIC format, which browsers cannot open. Switch the camera ' +
+        'to JPEG in your camera settings, or share the photo — Android converts it on the way.',
+    )
+  }
+
+  return new Blob([buffer], { type: mime || file.type || 'image/jpeg' })
+}
+
+/**
  * createImageBitmap handles EXIF orientation and is far cheaper on memory, but
- * it rejects formats the browser cannot decode (an iPhone HEIC shared to an
- * Android build, say), so an <img> decode stands behind it.
+ * it rejects anything the browser cannot decode, so an <img> decode stands behind it.
  */
 async function decodeImage(file: Blob): Promise<Source> {
   if (typeof createImageBitmap === 'function') {
@@ -46,7 +105,13 @@ async function decodeImage(file: Blob): Promise<Source> {
     return await new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image()
       img.onload = () => resolve(img)
-      img.onerror = () => reject(new Error('That file could not be read as an image.'))
+      img.onerror = () =>
+        reject(
+          new Error(
+            `That file could not be read as an image (${file.type || 'unknown type'}, ` +
+              `${Math.round(file.size / 1024)} KB).`,
+          ),
+        )
       img.src = url
     })
   } finally {
@@ -91,7 +156,7 @@ export async function compressImage(
   file: Blob,
   maxBytes = RECEIPT_MAX_BYTES,
 ): Promise<CompressedImage> {
-  const source = await decodeImage(file)
+  const source = await decodeImage(await materialize(file))
 
   try {
     let edge = MAX_EDGE
