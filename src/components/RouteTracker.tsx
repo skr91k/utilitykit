@@ -21,6 +21,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/totp': 'TOTP Manager',
   '/todo': 'Todo',
   '/media': 'Media Browser',
+  '/grammar': 'Grammar Fixer',
   '/ip': 'IP Admin Redirect',
 };
 

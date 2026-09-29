@@ -26,6 +26,7 @@ import { PasswordGenerator } from './pages/PasswordGenerator'
 import { TotpManager } from './pages/TotpManager'
 import { TodoApp } from './pages/TodoApp'
 import { MediaBrowser } from './pages/MediaBrowser'
+import { GrammarFixer } from './pages/GrammarFixer'
 import { AdminData } from './pages/AdminData'
 
 function App() {
@@ -61,6 +62,7 @@ function App() {
         <Route path="/totp" element={<TotpManager />} />
         <Route path="/todo" element={<TodoApp />} />
         <Route path="/media" element={<MediaBrowser />} />
+        <Route path="/grammar" element={<GrammarFixer />} />
         {/* Unlisted: read-only Firestore console, admin accounts only. */}
         <Route path="/admin" element={<AdminData />} />
       </Routes>

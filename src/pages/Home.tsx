@@ -5,6 +5,7 @@ import './Home.css'
 
 const utilities = [
   { id: 23, icon: '🤖', name: 'Android Apps', path: 'https://play.google.com/store/apps/dev?id=7159728779238553663', description: 'Our apps on Google Play' },
+  { id: 28, icon: '✍️', name: 'Grammar Fixer', path: '/grammar', description: 'Fix grammar & wording as you type — Indian/US/UK English, casual or formal, Reddit DM or comment style' },
   { id: 27, icon: '🗂️', name: 'Media Browser', path: '/media', description: 'Browse files, folders & zips — text, image, video, PDF viewer + hex view for any file' },
   { id: 26, icon: '✅', name: 'Todo', path: '/todo', description: 'Todo list with a calendar view — Google or guest login, synced across devices' },
   { id: 25, icon: '⏱️', name: 'TOTP Manager', path: '/totp', description: '2FA authenticator codes — add by link, QR image or key, synced to Google login' },
