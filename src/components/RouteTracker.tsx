@@ -19,6 +19,8 @@ const PAGE_NAMES: Record<string, string> = {
   '/jwt': 'JWT Decoder',
   '/password': 'Password Generator',
   '/totp': 'TOTP Manager',
+  '/todo': 'Todo',
+  '/media': 'Media Browser',
   '/ip': 'IP Admin Redirect',
 };
 

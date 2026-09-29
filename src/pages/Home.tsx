@@ -5,6 +5,8 @@ import './Home.css'
 
 const utilities = [
   { id: 23, icon: '🤖', name: 'Android Apps', path: 'https://play.google.com/store/apps/dev?id=7159728779238553663', description: 'Our apps on Google Play' },
+  { id: 27, icon: '🗂️', name: 'Media Browser', path: '/media', description: 'Browse files, folders & zips — text, image, video, PDF viewer + hex view for any file' },
+  { id: 26, icon: '✅', name: 'Todo', path: '/todo', description: 'Todo list with a calendar view — Google or guest login, synced across devices' },
   { id: 25, icon: '⏱️', name: 'TOTP Manager', path: '/totp', description: '2FA authenticator codes — add by link, QR image or key, synced to Google login' },
   { id: 24, icon: '🔏', name: 'Password Generator', path: '/password', description: 'Strong random passwords — length, character sets, strength meter, copy' },
   { id: 22, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },

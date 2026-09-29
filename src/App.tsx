@@ -24,6 +24,8 @@ import { IPRedirect } from './pages/IPRedirect'
 import { MoneyFlow } from './pages/MoneyFlow'
 import { PasswordGenerator } from './pages/PasswordGenerator'
 import { TotpManager } from './pages/TotpManager'
+import { TodoApp } from './pages/TodoApp'
+import { MediaBrowser } from './pages/MediaBrowser'
 import { AdminData } from './pages/AdminData'
 
 function App() {
@@ -57,6 +59,8 @@ function App() {
         <Route path="/money" element={<MoneyFlow />} />
         <Route path="/password" element={<PasswordGenerator />} />
         <Route path="/totp" element={<TotpManager />} />
+        <Route path="/todo" element={<TodoApp />} />
+        <Route path="/media" element={<MediaBrowser />} />
         {/* Unlisted: read-only Firestore console, admin accounts only. */}
         <Route path="/admin" element={<AdminData />} />
       </Routes>

@@ -161,6 +161,21 @@ service cloud.firestore {
                       && request.resource.data.account.size() <= 200;
       }
 
+      // Todo app - guests (anonymous) and Google accounts alike, each only
+      // their own list. date is 'YYYY-MM-DD' or '' for no date.
+      match /todos/{todoId} {
+        allow read, delete: if isAuthenticated() && isOwner(userId);
+        allow create, update: if isAuthenticated() && isOwner(userId)
+                              && request.resource.data.keys().hasOnly(['title', 'date', 'done', 'createdAt'])
+                              && request.resource.data.title is string
+                              && request.resource.data.title.size() > 0
+                              && request.resource.data.title.size() <= 500
+                              && request.resource.data.date is string
+                              && request.resource.data.date.matches('^([0-9]{4}-[0-9]{2}-[0-9]{2})?$')
+                              && request.resource.data.done is bool
+                              && request.resource.data.createdAt is number;
+      }
+
       // Receipt images, one document per transaction id. Kept out of the ledger
       // documents so the collection listener never pulls image bytes; read only
       // when someone opens a receipt.
