@@ -22,6 +22,18 @@ const BarcodeDetectorApi = (window as unknown as { BarcodeDetector?: BarcodeDete
 
 const EMPTY_FORM: NewTotpEntry = { issuer: '', account: '', secret: '', digits: 6, period: 30, algorithm: 'SHA1' }
 
+// Shown when signed out or the vault is empty, so the page isn't blank — not saved anywhere
+const DEMO_ENTRY: TotpEntry = {
+  id: 'demo',
+  issuer: 'Demo',
+  account: 'demo@example.com',
+  secret: 'JBSWY3DPEHPK3PXP',
+  digits: 6,
+  period: 30,
+  algorithm: 'SHA1',
+  createdAt: 0,
+}
+
 // 123456 -> "123 456", 12345678 -> "1234 5678"
 const groupCode = (code: string) => {
   const half = Math.ceil(code.length / 2)
@@ -75,11 +87,14 @@ export function TotpManager() {
     return () => clearTimeout(timer)
   }, [])
 
+  const isDemo = entries.length === 0
+  const shown = isDemo ? [DEMO_ENTRY] : entries
+
   // Recompute only when some entry's time step rolls over (or the list changes)
-  const stepKey = entries.map(e => `${e.id}:${Math.floor(now / 1000 / e.period)}`).join()
+  const stepKey = shown.map(e => `${e.id}:${Math.floor(now / 1000 / e.period)}`).join()
   useEffect(() => {
     let cancelled = false
-    Promise.all(entries.map(async e => [e.id, await generateTotp(e).catch(() => '------')] as const))
+    Promise.all(shown.map(async e => [e.id, await generateTotp(e).catch(() => '------')] as const))
       .then(pairs => { if (!cancelled) setCodes(Object.fromEntries(pairs)) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,7 +195,7 @@ export function TotpManager() {
     }
   }
 
-  const filtered = entries.filter(e => {
+  const filtered = shown.filter(e => {
     const q = filter.trim().toLowerCase()
     return !q || e.issuer.toLowerCase().includes(q) || e.account.toLowerCase().includes(q)
   })
@@ -199,81 +214,92 @@ export function TotpManager() {
 
         {loading ? (
           <div className="text-center text-gray-500 py-8">Loading...</div>
-        ) : !uid ? (
-          <div className="rounded-lg border border-[#333] bg-[#1a1a1a] p-6 text-center">
-            <p className="text-sm text-gray-400 mb-4">
-              Sign in with Google to add and see your 2FA codes. Only your account can read the saved keys.
-            </p>
-            <button onClick={login} className="px-6 py-2 rounded-md bg-[#00bfff]! text-[#0b0b0b] font-bold cursor-pointer hover:bg-[#33ccff]!">
-              Sign in with Google
-            </button>
-          </div>
         ) : (
           <>
-            <button
-              onClick={openAdd}
-              className="w-full mb-4 p-3 bg-gradient-to-r from-[#8a2be2] to-[#00bfff] text-white rounded-md font-bold uppercase tracking-wide cursor-pointer hover:from-[#00bfff] hover:to-[#8a2be2] transition-all"
-            >
-              + Add account
-            </button>
-
-            {error && (
-              <div className="mb-3 p-3 rounded-md bg-red-900/50 border border-red-700 text-red-300 text-sm">{error}</div>
-            )}
-
-            {entries.length > 3 && (
-              <input
-                type="text"
-                value={filter}
-                onChange={e => setFilter(e.target.value)}
-                placeholder="Search issuer or account..."
-                className={`${inputCls} mb-3`}
-              />
-            )}
-
-            {entries.length === 0 ? (
-              <div className="text-center text-gray-500 text-sm py-6">No accounts yet — tap Add and paste the setup key or otpauth link.</div>
+            {!uid ? (
+              <div className="mb-4 rounded-lg border border-[#333] bg-[#1a1a1a] p-6 text-center">
+                <p className="text-sm text-gray-400 mb-4">
+                  Sign in with Google to add and see your 2FA codes. Only your account can read the saved keys.
+                </p>
+                <button onClick={login} className="px-6 py-2 rounded-md bg-[#00bfff]! text-[#0b0b0b] font-bold cursor-pointer hover:bg-[#33ccff]!">
+                  Sign in with Google
+                </button>
+              </div>
             ) : (
-              <ul className="space-y-2">
-                {filtered.map(entry => {
-                  const remaining = entry.period - (Math.floor(now / 1000) % entry.period)
-                  const urgent = remaining <= 5
-                  const code = codes[entry.id]
-                  return (
-                    <li key={entry.id} className="rounded-md border border-[#333] bg-[#1e1e1e] overflow-hidden">
-                      <div className="flex items-center gap-3 p-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-gray-200 truncate">{entry.issuer || entry.account}</div>
-                          {entry.issuer && entry.account && <div className="text-xs text-[#888] truncate">{entry.account}</div>}
-                          <button
-                            onClick={() => copyCode(entry)}
-                            title="Copy code"
-                            className={`mt-1 font-mono text-2xl sm:text-3xl font-bold tracking-wider cursor-pointer bg-transparent! p-0! border-0! ${urgent ? 'text-red-400' : 'text-[#00bfff]'}`}
-                          >
-                            {code ? groupCode(code) : '··· ···'}
-                          </button>
+              <>
+                <button
+                  onClick={openAdd}
+                  className="w-full mb-4 p-3 bg-gradient-to-r from-[#8a2be2] to-[#00bfff] text-white rounded-md font-bold uppercase tracking-wide cursor-pointer hover:from-[#00bfff] hover:to-[#8a2be2] transition-all"
+                >
+                  + Add account
+                </button>
+
+                {error && (
+                  <div className="mb-3 p-3 rounded-md bg-red-900/50 border border-red-700 text-red-300 text-sm">{error}</div>
+                )}
+
+                {entries.length > 3 && (
+                  <input
+                    type="text"
+                    value={filter}
+                    onChange={e => setFilter(e.target.value)}
+                    placeholder="Search issuer or account..."
+                    className={`${inputCls} mb-3`}
+                  />
+                )}
+              </>
+            )}
+
+            {isDemo && (
+              <div className="text-center text-gray-500 text-xs mb-2">
+                Sample account below — {uid ? 'tap Add and paste the setup key or otpauth link' : 'sign in'} to add your own.
+              </div>
+            )}
+
+            <ul className="space-y-2">
+              {filtered.map(entry => {
+                const remaining = entry.period - (Math.floor(now / 1000) % entry.period)
+                const urgent = remaining <= 5
+                const code = codes[entry.id]
+                return (
+                  <li key={entry.id} className="rounded-md border border-[#333] bg-[#1e1e1e] overflow-hidden">
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-200 truncate">
+                          {entry.issuer || entry.account}
+                          {entry.id === DEMO_ENTRY.id && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-[#333] text-gray-400">Demo</span>}
                         </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className={`text-xs font-mono ${urgent ? 'text-red-400' : 'text-gray-400'}`}>{remaining}s</span>
-                          <button onClick={() => copyCode(entry)} className="text-xs text-[#00bfff] font-semibold cursor-pointer">
-                            {copied === entry.id ? 'Copied' : 'Copy'}
-                          </button>
+                        {entry.issuer && entry.account && <div className="text-xs text-[#888] truncate">{entry.account}</div>}
+                        <button
+                          onClick={() => copyCode(entry)}
+                          title="Copy code"
+                          className={`mt-1 font-mono text-2xl sm:text-3xl font-bold tracking-wider cursor-pointer bg-transparent! p-0! border-0! ${urgent ? 'text-red-400' : 'text-[#00bfff]'}`}
+                        >
+                          {code ? groupCode(code) : '··· ···'}
+                        </button>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`text-xs font-mono ${urgent ? 'text-red-400' : 'text-gray-400'}`}>{remaining}s</span>
+                        <button onClick={() => copyCode(entry)} className="text-xs text-[#00bfff] font-semibold cursor-pointer">
+                          {copied === entry.id ? 'Copied' : 'Copy'}
+                        </button>
+                        {entry.id !== DEMO_ENTRY.id && (
                           <button onClick={() => openEdit(entry)} className="text-xs text-gray-400 hover:text-white cursor-pointer">
                             Edit
                           </button>
-                        </div>
+                        )}
                       </div>
-                      <div className="h-1 bg-[#333]">
-                        <div
-                          className={`h-full transition-[width] duration-1000 ease-linear ${urgent ? 'bg-red-500' : 'bg-[#00bfff]'}`}
-                          style={{ width: `${(remaining / entry.period) * 100}%` }}
-                        />
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+                    </div>
+                    <div className="h-1 bg-[#333]">
+                      <div
+                        className={`h-full transition-[width] duration-1000 ease-linear ${urgent ? 'bg-red-500' : 'bg-[#00bfff]'}`}
+                        style={{ width: `${(remaining / entry.period) * 100}%` }}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
           </>
         )}
       </div>
