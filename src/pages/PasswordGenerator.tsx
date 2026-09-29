@@ -178,6 +178,7 @@ export function PasswordGenerator() {
   return (
     <div className="min-h-screen bg-[#121212] text-[#f0f0f0] flex flex-col items-center p-4 pt-8">
       <div className="w-full max-w-[600px]">
+        <Link to="/" className="inline-flex items-center gap-1.5 mb-4 px-3 py-1.5 rounded border border-[#333] text-sm text-gray-400 hover:border-[#555] hover:text-gray-200 transition-all">← Home</Link>
         <h1 className="text-center text-[#00bfff] text-2xl font-bold mb-2">Password Generator</h1>
         <p className="text-center text-gray-500 text-sm mb-2">Generated locally with the browser's crypto — nothing leaves your device</p>
         <p className="text-center text-sm mb-6">
