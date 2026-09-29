@@ -23,6 +23,7 @@ import { FuelTracker } from './pages/FuelTracker'
 import { IPRedirect } from './pages/IPRedirect'
 import { MoneyFlow } from './pages/MoneyFlow'
 import { PasswordGenerator } from './pages/PasswordGenerator'
+import { TotpManager } from './pages/TotpManager'
 import { AdminData } from './pages/AdminData'
 
 function App() {
@@ -55,6 +56,7 @@ function App() {
         <Route path="/ip" element={<IPRedirect />} />
         <Route path="/money" element={<MoneyFlow />} />
         <Route path="/password" element={<PasswordGenerator />} />
+        <Route path="/totp" element={<TotpManager />} />
         {/* Unlisted: read-only Firestore console, admin accounts only. */}
         <Route path="/admin" element={<AdminData />} />
       </Routes>

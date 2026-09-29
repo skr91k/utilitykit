@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useSEO } from '../utils/useSEO'
 import { useAuth } from '../utils/useAuth'
 import {
@@ -178,7 +179,10 @@ export function PasswordGenerator() {
     <div className="min-h-screen bg-[#121212] text-[#f0f0f0] flex flex-col items-center p-4 pt-8">
       <div className="w-full max-w-[600px]">
         <h1 className="text-center text-[#00bfff] text-2xl font-bold mb-2">Password Generator</h1>
-        <p className="text-center text-gray-500 text-sm mb-6">Generated locally with the browser's crypto — nothing leaves your device</p>
+        <p className="text-center text-gray-500 text-sm mb-2">Generated locally with the browser's crypto — nothing leaves your device</p>
+        <p className="text-center text-sm mb-6">
+          <Link to="/totp" className="text-[#f0a500] hover:underline">⏱️ TOTP Manager →</Link>
+        </p>
 
         <div className="space-y-2">
           {passwords.map((pw, i) => (
