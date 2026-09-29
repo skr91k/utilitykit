@@ -118,6 +118,22 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
       }
 
+      // Saved passwords from the Password Generator - only the signed-in
+      // Google account that owns them. Entries are immutable: save or delete.
+      match /savedPasswords/{entryId} {
+        allow read, delete: if isAuthenticated() && hasEmail() && isOwner(userId);
+        allow create: if isAuthenticated() && hasEmail() && isOwner(userId)
+                      && request.resource.data.keys().hasOnly(['password', 'website', 'username', 'createdAt'])
+                      && request.resource.data.password is string
+                      && request.resource.data.password.size() > 0
+                      && request.resource.data.password.size() <= 256
+                      && request.resource.data.website is string
+                      && request.resource.data.website.size() <= 200
+                      && request.resource.data.username is string
+                      && request.resource.data.username.size() <= 200
+                      && request.resource.data.createdAt is number;
+      }
+
       // Receipt images, one document per transaction id. Kept out of the ledger
       // documents so the collection listener never pulls image bytes; read only
       // when someone opens a receipt.

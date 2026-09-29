@@ -17,6 +17,7 @@ const PAGE_NAMES: Record<string, string> = {
   '/split': 'Split Expense',
   '/cricket': 'Cricket Tracker',
   '/jwt': 'JWT Decoder',
+  '/password': 'Password Generator',
   '/ip': 'IP Admin Redirect',
 };
 

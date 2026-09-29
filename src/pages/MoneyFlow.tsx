@@ -111,6 +111,36 @@ const isStandalone = () =>
     // iOS Safari doesn't implement display-mode
     (navigator as unknown as { standalone?: boolean }).standalone === true)
 
+/** Set once the 1s install popup has been shown — it never comes back after that. */
+const INSTALL_PROMPTED_KEY = 'moneyflow:install-prompted'
+
+const markInstallPrompted = () => {
+  try { localStorage.setItem(INSTALL_PROMPTED_KEY, '1') } catch { /* storage blocked */ }
+}
+
+const wasInstallPrompted = () => {
+  try { return localStorage.getItem(INSTALL_PROMPTED_KEY) !== null } catch { return false }
+}
+
+/**
+ * Opens Chrome's native install dialog when it's available. 'unavailable' means
+ * the caller should fall back to manual instructions (Safari/iOS, Firefox, or
+ * Chrome hasn't judged the page installable yet).
+ */
+async function promptInstall(): Promise<'accepted' | 'dismissed' | 'unavailable'> {
+  if (!deferredInstall) return 'unavailable'
+  try {
+    await deferredInstall.prompt()
+    const { outcome } = await deferredInstall.userChoice
+    deferredInstall = null
+    window.dispatchEvent(new Event(INSTALL_READY))
+    return outcome
+  } catch (err) {
+    console.error('Install prompt failed:', err)
+    return 'unavailable'
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 type TxnType = 'in' | 'out'
@@ -176,7 +206,7 @@ const deleteReceipt = (uid: string, txnId: string) => deleteDoc(receiptDoc(uid, 
 const METHODS = ['GPay', 'PhonePe', 'Paytm', 'UPI', 'Bank Transfer', 'Cash', 'Card', 'Other']
 
 /** Shown beside the heading — bump on every user-visible change to this page. */
-const VERSION = 'v1.0.1'
+const VERSION = 'v1.0.2'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -455,6 +485,7 @@ function SignInGate({ onLogin, anonymous }: { onLogin: () => void; anonymous: bo
   return (
     <div id="moneyflow-root" className="min-h-screen bg-[#f3f6fb] text-[#172033] flex flex-col items-center justify-center p-6">
       <style>{PRINT_CSS}</style>
+      <InstallPopup />
       <div className="w-full max-w-[380px] text-center">
         <div className="text-5xl mb-4">💳</div>
         {/* Inline colour: an unlayered global `h1 { color: #fff }` would otherwise win. */}
@@ -577,23 +608,11 @@ function HeaderMenu({
   }
 
   const addToHome = async () => {
-    if (!deferredInstall) {
-      // No prompt available: Safari/iOS, desktop Firefox, or Chrome hasn't
-      // decided the page is installable yet. Fall back to telling the user how.
-      setHelp(true)
-      return
-    }
-    try {
-      await deferredInstall.prompt()
-      const { outcome } = await deferredInstall.userChoice
-      deferredInstall = null
-      setCanInstall(false)
-      if (outcome === 'dismissed') setHelp(true)
-      else setOpen(false)
-    } catch (err) {
-      console.error('Install prompt failed:', err)
-      setHelp(true)
-    }
+    // Using the menu item counts as having seen the offer — no popup after this.
+    markInstallPrompted()
+    const outcome = await promptInstall()
+    if (outcome === 'accepted') setOpen(false)
+    else setHelp(true)
   }
 
   const itemClass =
@@ -682,6 +701,87 @@ function HeaderMenu({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A one-off card offering "Add to Home screen" a second after the page opens.
+ * It's shown at most once per browser: the moment it appears it's marked as
+ * seen, so ignoring it, closing it or accepting it all mean it never returns.
+ * The ⋮ menu item stays available for anyone who changes their mind.
+ */
+function InstallPopup() {
+  const [show, setShow] = useState(false)
+  const [help, setHelp] = useState(false)
+
+  useEffect(() => {
+    if (isStandalone() || wasInstallPrompted()) return
+    const t = window.setTimeout(() => {
+      markInstallPrompted()
+      setShow(true)
+    }, 1000)
+    return () => window.clearTimeout(t)
+  }, [])
+
+  if (!show) return null
+
+  const add = async () => {
+    const outcome = await promptInstall()
+    if (outcome === 'accepted' || outcome === 'dismissed') setShow(false)
+    else setHelp(true)
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Add MoneyFlow to your home screen"
+      className="no-print fixed inset-x-0 bottom-0 z-40 flex justify-center p-4"
+    >
+      <div className="w-full max-w-[420px] rounded-2xl border border-[#e6eaf0] bg-white p-4 text-left shadow-[0_12px_35px_rgba(15,23,42,.25)]">
+        <div className="flex items-start gap-3">
+          <img src="/money-icon-192.png" alt="" className="h-11 w-11 shrink-0 rounded-xl" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-[#172033]">Add MoneyFlow to your Home screen</div>
+            <p className="mt-0.5 mb-0 text-xs leading-relaxed text-[#667085]">
+              Open it in one tap, full screen, like an app.
+            </p>
+          </div>
+          <button
+            onClick={() => setShow(false)}
+            aria-label="Close"
+            className="-mt-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-transparent! text-lg leading-none text-[#98a2b3]! border-transparent! cursor-pointer hover:bg-[#f3f6fb]!"
+          >
+            ×
+          </button>
+        </div>
+
+        {help ? (
+          <div className="mt-3 text-xs leading-relaxed text-[#475467]">
+            <p className="mb-1.5">
+              <b className="text-[#2563eb]">Android / Chrome:</b> tap the browser's ⋮ menu → <b>Add to Home screen</b>.
+            </p>
+            <p className="mb-0">
+              <b className="text-[#2563eb]">iPhone / Safari:</b> tap Share → <b>Add to Home Screen</b>.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              onClick={() => setShow(false)}
+              className="rounded-lg bg-transparent! px-3 py-2 text-sm font-medium text-[#475467]! border-transparent! cursor-pointer hover:bg-[#f3f6fb]!"
+            >
+              Not now
+            </button>
+            <button
+              onClick={add}
+              className="rounded-lg bg-[#2563eb]! px-4 py-2 text-sm font-semibold text-white! border-transparent! cursor-pointer hover:bg-[#1d4ed8]!"
+            >
+              📲 Add
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
