@@ -143,6 +143,20 @@ export function TotpManager() {
     }
   }
 
+  // Cmd/Ctrl+V a screenshot anywhere in the Add dialog to scan its QR code
+  useEffect(() => {
+    if (!adding || !BarcodeDetectorApi) return
+    const onPaste = (e: ClipboardEvent) => {
+      const image = Array.from(e.clipboardData?.files ?? []).find(f => f.type.startsWith('image/'))
+      if (!image) return
+      e.preventDefault()
+      scanQrImage(image)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adding])
+
   const confirmAdd = async () => {
     if (!uid) return
     if (!isValidSecret(form.secret)) {
@@ -321,6 +335,7 @@ export function TotpManager() {
               {BarcodeDetectorApi && (
                 <label className="block text-center text-sm p-2 rounded-md border border-dashed border-[#444] text-gray-300 cursor-pointer hover:border-[#00bfff]">
                   📷 Read QR code from image / screenshot
+                  <span className="block text-xs text-gray-500">or paste a screenshot (Ctrl/⌘+V)</span>
                   <input type="file" accept="image/*" className="hidden" onChange={e => { scanQrImage(e.target.files?.[0]); e.target.value = '' }} />
                 </label>
               )}
