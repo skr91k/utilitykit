@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed background so the icon also works as a maskable Android icon;
+       artwork stays inside the middle 80% safe zone. Same design as favicon.svg. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8a2be2"/>
+      <stop offset="1" stop-color="#00bfff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <rect x="136" y="136" width="108" height="108" rx="24" fill="#ffffff"/>
+  <rect x="268" y="136" width="108" height="108" rx="24" fill="#ffffff" fill-opacity="0.6"/>
+  <rect x="136" y="268" width="108" height="108" rx="24" fill="#ffffff" fill-opacity="0.6"/>
+  <path d="M322 284v76M284 322h76" stroke="#ffffff" stroke-width="24" stroke-linecap="round"/>
+</svg>

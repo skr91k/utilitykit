@@ -40,7 +40,10 @@ export default defineConfig({
         background_color: '#242424',
         display: 'standalone',
         icons: [
-          { src: '/vite.svg', sizes: '48x48', type: 'image/svg+xml' },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
         // Long-pressing the installed Utility Kit icon on Android lists these;
         // a shortcut can then be dragged straight onto the home screen.
