@@ -144,7 +144,16 @@ export function MediaBrowser() {
   const addItems = (items: FileItem[]) => {
     if (!items.length) return
     setError(null)
-    setTree(t => [...t, ...buildTree(items)])
+    const nodes = buildTree(items)
+    setTree(t => [...t, ...nodes])
+    // Opening a single file means you want to see it — skip the "select a file" step
+    if (items.length === 1) {
+      let node = nodes[0]
+      const dirIds: string[] = []
+      while (node.dir) { dirIds.push(node.id); node = node.children[0] }
+      if (dirIds.length) setExpanded(s => new Set([...s, ...dirIds]))
+      setSelected(node)
+    }
   }
 
   const onPick = (files: FileList | null) => {
