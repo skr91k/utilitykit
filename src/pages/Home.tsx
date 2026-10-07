@@ -14,7 +14,7 @@ const utilities = [
   { id: 22, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
   { id: 21, icon: '⛽', name: 'Fuel & Trip Tracker', path: '/fuel', description: 'Log trips & fuel — litres, range, distance, history & PDF export' },
   { id: 19, icon: '📋', name: 'Paste Bin', path: '/paste', description: 'Public & private pastes — clickable links, copy, edit, remove' },
-  { id: 3, icon: '🔳', name: 'QR Code Generator', path: '/qr', description: 'Generate QR codes instantly' },
+  { id: 3, icon: '🔳', name: 'QR Code Generator & Reader', path: '/qr', description: 'Generate or scan QR codes' },
   { id: 1, icon: '🔢', name: 'Counter', path: '/counter', description: 'Simple click counter' },
   { id: 9, icon: '💪', name: 'Workout Manager', path: '/workout', description: 'Track reps, steps & rest timer' },
   { id: 8, icon: '🕌', name: 'Prayer Times', path: '/prayer', description: 'Islamic prayer times calculator' },

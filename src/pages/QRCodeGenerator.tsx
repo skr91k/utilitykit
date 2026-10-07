@@ -10,9 +10,9 @@ declare global {
 
 export function QRCodeGenerator() {
   useSEO({
-    title: 'QR Code Generator',
-    description: 'Free online QR code generator. Create QR codes for URLs, text, WiFi, and more. Download in various sizes instantly.',
-    keywords: 'qr code, qr generator, barcode, scan code, url to qr, free qr code',
+    title: 'QR Code Generator & Reader',
+    description: 'Free online QR code generator and reader. Create QR codes for URLs, text, WiFi, and more, or scan one from an image, screenshot or camera.',
+    keywords: 'qr code, qr generator, qr reader, qr scanner, scan qr from image, barcode, url to qr, free qr code',
   });
 
   const [text, setText] = useState('')
