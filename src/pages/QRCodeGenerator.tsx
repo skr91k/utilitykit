@@ -56,6 +56,8 @@ export function QRCodeGenerator() {
     })
   }
 
+  const [tab, setTab] = useState<'generate' | 'read'>('generate')
+
   // Reader: decode a QR code from an uploaded / pasted / dropped image or the camera
   const [decoded, setDecoded] = useState<string[] | null>(null)
   const [readError, setReadError] = useState('')
@@ -85,6 +87,7 @@ export function QRCodeGenerator() {
       const image = Array.from(e.clipboardData?.files ?? []).find(f => f.type.startsWith('image/'))
       if (!image) return
       e.preventDefault()
+      setTab('read')
       readImage(image)
     }
     document.addEventListener('paste', onPaste)
@@ -163,8 +166,22 @@ export function QRCodeGenerator() {
   return (
     <div className="min-h-screen bg-[#121212] text-[#e0e0e0] flex justify-center items-center p-4">
       <div className="bg-[#1e1e1e] rounded-lg p-8 shadow-lg w-full max-w-[500px]">
-        <h1 className="text-center text-[#bb86fc] text-2xl font-bold mb-6">QR Code Generator</h1>
+        <div className="flex mb-6 p-1 rounded bg-[#2d2d2d]">
+          {(['generate', 'read'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); if (t === 'generate') setScanning(false) }}
+              className={`flex-1 p-2 rounded text-sm font-semibold cursor-pointer transition-colors ${tab === t ? 'bg-[#bb86fc]! text-white' : 'bg-transparent! text-[#757575] hover:text-[#e0e0e0]'}`}
+            >
+              {t === 'generate' ? 'Generator' : 'Reader'}
+            </button>
+          ))}
+        </div>
 
+        <h1 className="text-center text-[#bb86fc] text-2xl font-bold mb-6">{tab === 'generate' ? 'QR Code Generator' : 'QR Code Reader'}</h1>
+
+        {/* Kept mounted while hidden so the rendered QR survives tab switches */}
+        <div className={tab === 'generate' ? '' : 'hidden'}>
         <div className="mb-6">
           <label htmlFor="text-input" className="block mb-2 text-[#bb86fc]">
             Enter text or URL:
@@ -211,9 +228,9 @@ export function QRCodeGenerator() {
         >
           Download QR Code
         </button>
+        </div>
 
-        <h2 className="text-center text-[#bb86fc] text-xl font-bold mt-10 mb-4 pt-8 border-t border-[#333]">QR Code Reader</h2>
-
+        {tab === 'read' && (<>
         <label
           onDragOver={e => { e.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
@@ -248,11 +265,12 @@ export function QRCodeGenerator() {
                 {isUrl && (
                   <a href={value} target="_blank" rel="noopener noreferrer" className="text-[#bb86fc] font-semibold">Open link ↗</a>
                 )}
-                <button onClick={() => setText(value)} className="text-[#757575] hover:text-[#e0e0e0] cursor-pointer">Use in generator</button>
+                <button onClick={() => { setText(value); setTab('generate') }} className="text-[#757575] hover:text-[#e0e0e0] cursor-pointer">Use in generator</button>
               </div>
             </div>
           )
         })}
+        </>)}
 
         <div className="text-center mt-8 text-xs text-[#757575]">
           Powered by utilitykit
