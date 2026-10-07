@@ -13,12 +13,7 @@ import {
   MAX_SECRET_LENGTH,
 } from '../utils/totpVaultFirebase'
 import type { TotpEntry, NewTotpEntry } from '../utils/totpVaultFirebase'
-
-// BarcodeDetector is Chromium/Safari only and not in the TS DOM lib yet
-type BarcodeDetectorCtor = new (opts: { formats: string[] }) => {
-  detect: (source: ImageBitmapSource) => Promise<{ rawValue: string }[]>
-}
-const BarcodeDetectorApi = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
+import { readQrCodes } from '../utils/readQr'
 
 const EMPTY_FORM: NewTotpEntry = { issuer: '', account: '', secret: '', digits: 6, period: 30, algorithm: 'SHA1' }
 
@@ -132,10 +127,10 @@ export function TotpManager() {
   }
 
   const scanQrImage = async (file: File | undefined) => {
-    if (!file || !BarcodeDetectorApi) return
+    if (!file) return
     try {
-      const found = await new BarcodeDetectorApi({ formats: ['qr_code'] }).detect(await createImageBitmap(file))
-      const link = found.find(b => b.rawValue.startsWith('otpauth://'))?.rawValue
+      const found = await readQrCodes(file)
+      const link = found.find(v => v.startsWith('otpauth://'))
       if (link) applyUri(link)
       else setFormError(found.length ? 'QR code is not an otpauth:// link' : 'No QR code found in that image')
     } catch (e) {
@@ -145,7 +140,7 @@ export function TotpManager() {
 
   // Cmd/Ctrl+V a screenshot anywhere in the Add dialog to scan its QR code
   useEffect(() => {
-    if (!adding || !BarcodeDetectorApi) return
+    if (!adding) return
     const onPaste = (e: ClipboardEvent) => {
       const image = Array.from(e.clipboardData?.files ?? []).find(f => f.type.startsWith('image/'))
       if (!image) return
@@ -332,13 +327,11 @@ export function TotpManager() {
                 autoComplete="off"
                 className={inputCls}
               />
-              {BarcodeDetectorApi && (
-                <label className="block text-center text-sm p-2 rounded-md border border-dashed border-[#444] text-gray-300 cursor-pointer hover:border-[#00bfff]">
-                  📷 Read QR code from image / screenshot
-                  <span className="block text-xs text-gray-500">or paste a screenshot (Ctrl/⌘+V)</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={e => { scanQrImage(e.target.files?.[0]); e.target.value = '' }} />
-                </label>
-              )}
+              <label className="block text-center text-sm p-2 rounded-md border border-dashed border-[#444] text-gray-300 cursor-pointer hover:border-[#00bfff]">
+                📷 Read QR code from image / screenshot
+                <span className="block text-xs text-gray-500">or paste a screenshot (Ctrl/⌘+V)</span>
+                <input type="file" accept="image/*" className="hidden" onChange={e => { scanQrImage(e.target.files?.[0]); e.target.value = '' }} />
+              </label>
               <div className="text-center text-xs text-gray-500">or enter the setup key</div>
               <input
                 type="text"
