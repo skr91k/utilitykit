@@ -14,7 +14,6 @@ import { SupportChat } from './pages/SupportChat'
 import { SplitExpense } from './pages/SplitExpense'
 import { CricketTracker } from './pages/CricketTracker'
 import { JWTDecoder } from './pages/JWTDecoder'
-import { BhavUnpacker } from './pages/BhavUnpacker'
 import { TVChart } from './pages/TVChart'
 import { PasteBin } from './pages/PasteBin'
 import { PasteView } from './pages/PasteView'
@@ -50,7 +49,6 @@ function App() {
         <Route path="/cricket" element={<CricketTracker />} />
         <Route path="/cricket/:token" element={<CricketTracker />} />
         <Route path="/jwt" element={<JWTDecoder />} />
-        <Route path="/priceDecoder" element={<BhavUnpacker />} />
         <Route path="/tv" element={<TVChart />} />
         <Route path="/paste" element={<PasteBin />} />
         <Route path="/paste/:kind/:id" element={<PasteView />} />

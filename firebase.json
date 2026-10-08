@@ -7,6 +7,13 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "/priceDecoder",
+        "destination": "https://kline-data.web.app/priceDecoder",
+        "type": 301
+      }
+    ],
     "rewrites": [
       {
         "source": "**",

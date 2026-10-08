@@ -35,7 +35,7 @@ npm run build && firebase deploy --only hosting
 | 🔤 String Tools | `/string` | Base64, URL encode, HTML entities, MD5/SHA hashes |
 | 🔏 Password Generator | `/password` | Strong random passwords — length, character sets, strength meter, copy |
 | 🔑 JWT Decoder | `/jwt` | Decode & inspect JWT tokens — claims, expiry, header |
-| 📊 Price Unpacker | `/priceDecoder` | Unpack OHLC binary zip — preview as JSON/CSV, download repacked |
+| 📊 Price Unpacker | `https://kline-data.web.app/priceDecoder` | Unpack OHLC binary zip — preview as JSON/CSV, download repacked |
 | 💬 Contact Us | `/contactus` | Get in touch or send feedback |
 | 📺 TV Channels | `https://tv1.web.app/` | Watch Live TV Channels |
 | 📚 Islamic Books | `https://islamicbooks2.web.app/` | Read Islamic Books Online |
