@@ -4,41 +4,42 @@ import { useAuth } from '../utils/useAuth'
 import './Home.css'
 
 const utilities: { id: number; icon: string; name: string; path: string; description: string; keywords?: string }[] = [
-  { id: 8, icon: '🕌', name: 'Prayer Times', path: '/prayer', description: 'Islamic prayer times calculator', keywords: 'adhan azan adan' },
-  { id: 26, icon: '✅', name: 'Todo', path: '/todo', description: 'Todo list with a calendar view — Google or guest login, synced across devices' },
-  { id: 22, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
-  { id: 15, icon: '💸', name: 'Split Expense', path: '/split', description: 'Split bills with friends, shareable via link' },
-  { id: 3, icon: '🔳', name: 'QR Code Generator & Reader', path: '/qr', description: 'Generate or scan QR codes' },
-  { id: 24, icon: '🔏', name: 'Password Generator', path: '/password', description: 'Strong random passwords — length, character sets, strength meter, copy' },
-  { id: 28, icon: '✍️', name: 'Grammar Fixer', path: '/grammar', description: 'Fix grammar & wording as you type — Indian/US/UK English, casual or formal, Reddit DM or comment style' },
-  { id: 19, icon: '📋', name: 'Paste Bin', path: '/paste', description: 'Public & private pastes — clickable links, copy, edit, remove' },
-  { id: 21, icon: '⛽', name: 'Fuel & Trip Tracker', path: '/fuel', description: 'Log trips & fuel — litres, range, distance, history & PDF export' },
-  { id: 9, icon: '💪', name: 'Workout Manager', path: '/workout', description: 'Track reps, steps & rest timer' },
-  { id: 1, icon: '🔢', name: 'Counter', path: '/counter', description: 'Simple click counter' },
+  { id: 1, icon: '🕌', name: 'Prayer Times', path: '/prayer', description: 'Islamic prayer times calculator', keywords: 'adhan azan adan' },
+  { id: 2, icon: '✅', name: 'Todo', path: '/todo', description: 'Todo list with a calendar view — Google or guest login, synced across devices' },
+  { id: 3, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
+  { id: 4, icon: '💸', name: 'Split Expense', path: '/split', description: 'Split bills with friends, shareable via link' },
+  { id: 5, icon: '🔳', name: 'QR Code Generator & Reader', path: '/qr', description: 'Generate or scan QR codes' },
+  { id: 6, icon: '🔏', name: 'Password Generator', path: '/password', description: 'Strong random passwords — length, character sets, strength meter, copy' },
+  { id: 7, icon: '✍️', name: 'Grammar Fixer', path: '/grammar', description: 'Fix grammar & wording as you type — Indian/US/UK English, casual or formal, Reddit DM or comment style' },
+  { id: 8, icon: '📋', name: 'Paste Bin', path: '/paste', description: 'Public & private pastes — clickable links, copy, edit, remove' },
+  { id: 9, icon: '⛽', name: 'Fuel & Trip Tracker', path: '/fuel', description: 'Log trips & fuel — litres, range, distance, history & PDF export' },
+  { id: 10, icon: '💪', name: 'Workout Manager', path: '/workout', description: 'Track reps, steps & rest timer' },
+  { id: 11, icon: '🔢', name: 'Counter', path: '/counter', description: 'Simple click counter' },
   { id: 12, icon: '📚', name: 'Islamic Books', path: 'https://islamicbooks2.web.app/', description: 'Read Islamic Books Online' },
-  { id: 11, icon: '📺', name: 'TV Channels', path: 'https://tv1.web.app/', description: 'Watch Live TV Channels' },
-  { id: 16, icon: '🏏', name: 'Cricket Tracker', path: '/cricket', description: 'Track series, matches & live ball-by-ball scores' },
-  { id: 25, icon: '⏱️', name: 'TOTP Manager', path: '/totp', description: '2FA authenticator codes — add by link, QR image or key, synced to Google login' },
-  { id: 27, icon: '🗂️', name: 'Media Browser', path: '/media', description: 'Browse files, folders & zips — text, image, video, PDF viewer + hex view for any file' },
-  { id: 23, icon: '🤖', name: 'Android Apps', path: 'https://play.google.com/store/apps/dev?id=7159728779238553663', description: 'Our apps on Google Play' },
-  { id: 4, icon: '🔐', name: 'Encryption Tool', path: '/encrypt', description: 'Encrypt/Decrypt with AES, DES, etc.' },
-  { id: 7, icon: '🔤', name: 'String Tools', path: '/string', description: 'Base64, URL encode, Hash' },
-  { id: 17, icon: '🔑', name: 'JWT Decoder', path: '/jwt', description: 'Decode & inspect JWT tokens — claims, expiry, header' },
-  { id: 5, icon: '⏳', name: 'Epoch Converter', path: '/epoch', description: 'Convert Unix timestamps' },
-  { id: 6, icon: '🗄️', name: 'SQLite Viewer', path: '/sqlite', description: 'View SQLite database files' },
-  { id: 20, icon: '🩹', name: 'Zip Repair', path: '/ziprepair', description: 'Repair corrupt or renamed zips — scan, recover entries, download fixed archive' },
-  { id: 13, icon: '📤', name: 'File Share p2p', path: 'http://0.0.0.0:8000/fileshare/', description: 'Share Files across devices p2p /relay' },
-  { id: 29, icon: '📉', name: 'Trading Chart', path: 'https://kline-data.web.app/chart', description: 'Candlestick trading chart' },
-  { id: 2, icon: '📈', name: 'P&L Dashboard', path: 'https://kline-data.web.app/pl', description: 'Profit & Loss Dashboard' },
-  { id: 18, icon: '📊', name: 'Price Unpacker OHLC Kline', path: 'https://kline-data.web.app/priceDecoder', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
-  { id: 14, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
-  { id: 10, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
+  { id: 13, icon: '📺', name: 'TV Channels', path: 'https://tv1.web.app/', description: 'Watch Live TV Channels' },
+  { id: 14, icon: '🏏', name: 'Cricket Tracker', path: '/cricket', description: 'Track series, matches & live ball-by-ball scores' },
+  { id: 15, icon: '⏱️', name: 'TOTP Manager', path: '/totp', description: '2FA authenticator codes — add by link, QR image or key, synced to Google login' },
+  { id: 16, icon: '🗂️', name: 'Media Browser', path: '/media', description: 'Browse files, folders & zips — text, image, video, PDF viewer + hex view for any file' },
+  { id: 17, icon: '🤖', name: 'Android Apps', path: 'https://play.google.com/store/apps/dev?id=7159728779238553663', description: 'Our apps on Google Play' },
+  { id: 18, icon: '🔐', name: 'Encryption Tool', path: '/encrypt', description: 'Encrypt/Decrypt with AES, DES, etc.' },
+  { id: 19, icon: '🔤', name: 'String Tools', path: '/string', description: 'Base64, URL encode, Hash' },
+  { id: 20, icon: '🔑', name: 'JWT Decoder', path: '/jwt', description: 'Decode & inspect JWT tokens — claims, expiry, header' },
+  { id: 21, icon: '⏳', name: 'Epoch Converter', path: '/epoch', description: 'Convert Unix timestamps' },
+  { id: 22, icon: '🗄️', name: 'SQLite Viewer', path: '/sqlite', description: 'View SQLite database files' },
+  { id: 23, icon: '🩹', name: 'Zip Repair', path: '/ziprepair', description: 'Repair corrupt or renamed zips — scan, recover entries, download fixed archive' },
+  { id: 24, icon: '📤', name: 'File Share p2p', path: 'http://0.0.0.0:8000/fileshare/', description: 'Share Files across devices p2p /relay' },
+  { id: 25, icon: '📉', name: 'Trading Chart', path: 'https://kline-data.web.app/chart', description: 'Candlestick trading chart' },
+  { id: 26, icon: '📈', name: 'P&L Dashboard', path: 'https://kline-data.web.app/pl', description: 'Profit & Loss Dashboard' },
+  { id: 27, icon: '📊', name: 'Price Unpacker OHLC Kline', path: 'https://kline-data.web.app/priceDecoder', description: 'Unpack OHLC binary zip — preview as JSON/CSV, download repacked' },
+  { id: 28, icon: '💬', name: 'Contact Us', path: '/contactus?id=utilityKit', description: 'Get in touch or send feedback' },
+  { id: 29, icon: '🚀', name: 'Coming Soon', path: '#', description: 'More utilities coming...' },
 ]
 
 // Bump this key whenever the default order below changes — it resets everyone's
 // stored click history so the new order actually shows instead of being buried
 // under their old recents.
-const RECENT_CLICKS_KEY = 'utilityRecentClicks_v6'
+const RECENT_CLICKS_KEY = 'utilityRecentClicks_v7'
+const COMING_SOON_ID = 29
 
 function Home() {
   const { user, loading, login, logout, loginAnonymous } = useAuth()
@@ -46,6 +47,7 @@ function Home() {
   const [recentClicks, setRecentClicks] = useState<number[]>(() => {
     localStorage.removeItem('utilityRecentClicks')
     localStorage.removeItem('utilityRecentClicks_v5')
+    localStorage.removeItem('utilityRecentClicks_v6')
     const saved = localStorage.getItem(RECENT_CLICKS_KEY)
     if (saved) {
       try {
@@ -60,7 +62,7 @@ function Home() {
   const handleUtilityClick = (id: number) => {
     window.scrollTo(0, 0)
     setRecentClicks(prev => {
-      if (id === 10) return prev
+      if (id === COMING_SOON_ID) return prev
       const filtered = prev.filter(clickId => clickId !== id)
       const updated = [id, ...filtered]
       localStorage.setItem(RECENT_CLICKS_KEY, JSON.stringify(updated))
@@ -69,9 +71,9 @@ function Home() {
   }
 
   const sortedUtilities = Array.from(new Set([
-    ...recentClicks.map(id => utilities.find(u => u.id === id)).filter((u): u is (typeof utilities)[0] => u !== undefined && u.id !== 10),
-    ...utilities.filter(u => u.id !== 10),
-    utilities.find(u => u.id === 10)!
+    ...recentClicks.map(id => utilities.find(u => u.id === id)).filter((u): u is (typeof utilities)[0] => u !== undefined && u.id !== COMING_SOON_ID),
+    ...utilities.filter(u => u.id !== COMING_SOON_ID),
+    utilities.find(u => u.id === COMING_SOON_ID)!
   ]));
 
   const filteredUtilities = sortedUtilities.filter(util => {
