@@ -113,9 +113,9 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
       }
 
-      // MoneyFlow cash in/out ledger - only the signed-in Google account that owns it
+      // MoneyFlow cash in/out ledger - Google accounts and guests (anonymous) alike, each only their own
       match /moneyTransactions/{txnId} {
-        allow read, write: if isAuthenticated() && hasEmail() && isOwner(userId);
+        allow read, write: if isAuthenticated() && isOwner(userId);
       }
 
       // Saved passwords from the Password Generator - only the signed-in
@@ -180,11 +180,11 @@ service cloud.firestore {
       // documents so the collection listener never pulls image bytes; read only
       // when someone opens a receipt.
       match /moneyReceipts/{txnId} {
-        allow read, delete: if isAuthenticated() && hasEmail() && isOwner(userId);
+        allow read, delete: if isAuthenticated() && isOwner(userId);
         // Belt and braces against a runaway write: Firestore's own ceiling is
         // 1 MiB per document and the client compresses to ~500 KB. size() on a
         // bytes value counts bytes (on a map it would count keys).
-        allow create, update: if isAuthenticated() && hasEmail() && isOwner(userId)
+        allow create, update: if isAuthenticated() && isOwner(userId)
                               && request.resource.data.bytes is bytes
                               && request.resource.data.bytes.size() < 900000;
       }

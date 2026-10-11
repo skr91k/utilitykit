@@ -480,8 +480,8 @@ function GoogleIcon() {
   )
 }
 
-/** Login wall — transactions live under the signed-in account, so Google is required. */
-function SignInGate({ onLogin, anonymous }: { onLogin: () => void; anonymous: boolean }) {
+/** Login wall — Google syncs everywhere; a guest (anonymous) account lives only in this browser. */
+function SignInGate({ onLogin, onGuest }: { onLogin: () => void; onGuest: () => void }) {
   return (
     <div id="moneyflow-root" className="min-h-screen bg-[#f3f6fb] text-[#172033] flex flex-col items-center justify-center p-6">
       <style>{PRINT_CSS}</style>
@@ -494,9 +494,7 @@ function SignInGate({ onLogin, anonymous }: { onLogin: () => void; anonymous: bo
           <span className="ml-1.5 align-super text-[10px] font-medium text-[#93a3b8]">{VERSION}</span>
         </h1>
         <p className="text-[#667085] text-sm mb-6">
-          {anonymous
-            ? 'You are signed in as a guest. Transactions are saved to your Google account, so please sign in with Google to continue.'
-            : 'Sign in with Google to track your cash in and out — your ledger syncs across every device you use.'}
+          Sign in with Google to track your cash in and out — your ledger syncs across every device you use.
         </p>
         {/* index.css sets an unlayered `button { background-color: #1a1a1a }`, which
             outranks Tailwind's layered utilities — hence the `!` on the colours. */}
@@ -506,7 +504,19 @@ function SignInGate({ onLogin, anonymous }: { onLogin: () => void; anonymous: bo
         >
           <GoogleIcon />
           Continue with Google
+          <span className="ml-2 rounded-full bg-[#dcfce7] px-2 py-0.5 text-[10px] font-semibold text-[#15803d]">Recommended</span>
         </button>
+        <button
+          onClick={onGuest}
+          className="mt-3 w-full p-3 rounded-lg bg-transparent! text-[#344054]! font-semibold cursor-pointer border border-[#d0d5dd] hover:bg-white! transition-colors"
+        >
+          Continue as Guest
+        </button>
+        <p className="mt-3 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-3 text-left text-xs leading-relaxed text-[#92400e]">
+          <b>Guest data stays in this browser only.</b> It won't be available in other browsers, other devices,
+          private/incognito windows, or after you log out or clear site data — and it can't be recovered.
+          Use Google sign-in to keep your ledger safe and synced.
+        </p>
         <Link to="/" className="mt-5 inline-block text-[#667085] text-sm hover:text-[#2563eb]">← Back to Utilities</Link>
       </div>
     </div>
@@ -559,7 +569,7 @@ function HeaderMenu({
   // Launched from the home screen already — the install item has nothing to do.
   const [installed] = useState(isStandalone)
 
-  const initial = (user.displayName || user.email || '?').charAt(0).toUpperCase()
+  const initial = user.isAnonymous ? 'G' : (user.displayName || user.email || '?').charAt(0).toUpperCase()
 
   useEffect(() => {
     const onReady = () => setCanInstall(deferredInstall !== null)
@@ -643,8 +653,9 @@ function HeaderMenu({
               </span>
             )}
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-[#172033]">{user.displayName || 'Signed in'}</div>
+              <div className="truncate text-sm font-semibold text-[#172033]">{user.isAnonymous ? 'Guest' : user.displayName || 'Signed in'}</div>
               {user.email && <div className="truncate text-xs text-[#667085]">{user.email}</div>}
+              {user.isAnonymous && <div className="truncate text-xs text-[#b45309]">Saved in this browser only</div>}
             </div>
           </div>
 
@@ -679,7 +690,12 @@ function HeaderMenu({
               <span>Back to Utilities</span>
             </Link>
             <button
-              onClick={() => { setOpen(false); onLogout() }}
+              onClick={() => {
+                // A guest account can't be signed back into — logging out orphans its ledger for good.
+                if (user.isAnonymous && !window.confirm('Log out of the guest account? Your guest transactions will be lost permanently and cannot be recovered.')) return
+                setOpen(false)
+                onLogout()
+              }}
               className={`${itemClass} text-[#b91c1c]! hover:bg-[#fef2f2]!`}
             >
               <span aria-hidden="true">↩</span>
@@ -795,9 +811,8 @@ export function MoneyFlow() {
 
   useMoneyManifest()
 
-  const { user, loading, login, logout } = useAuth()
-  // Anonymous sessions have no email; those accounts are not allowed past the gate.
-  const uid = user?.email ? user.uid : null
+  const { user, loading, login, logout, loginAnonymous } = useAuth()
+  const uid = user?.uid ?? null
 
   if (loading) {
     return (
@@ -807,7 +822,7 @@ export function MoneyFlow() {
     )
   }
 
-  if (!uid || !user) return <SignInGate onLogin={login} anonymous={!!user} />
+  if (!uid || !user) return <SignInGate onLogin={login} onGuest={loginAnonymous} />
 
   // Keyed on uid so switching accounts rebuilds the ledger against the right cache.
   return <Ledger key={uid} uid={uid} user={user} onLogout={logout} />
@@ -1189,6 +1204,12 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
       </header>
 
       <div className="mx-auto w-full max-w-[1100px] p-4 pb-10">
+        {user.isAnonymous && (
+          <div className="no-print mb-4 rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-xs leading-relaxed text-[#92400e]">
+            <b>Guest mode:</b> your transactions are saved in this browser only — not on other browsers or devices,
+            and they're lost if you log out or clear site data. Log out and sign in with Google to sync.
+          </div>
+        )}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <SummaryCard label="Total Cash In" value={money(totals.cashIn)} accent="text-[#16a34a]" bar="#16a34a" />
           <SummaryCard label="Total Cash Out" value={money(totals.cashOut)} accent="text-[#dc2626]" bar="#dc2626" />
@@ -1428,7 +1449,7 @@ function Ledger({ uid, user, onLogout }: { uid: string; user: User; onLogout: ()
           <div id="money-print-area">
             <div className="hidden print-only mb-3">
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>MoneyFlow — Transaction Report</h2>
-              <div style={{ fontSize: 11 }}>{user.email} — generated {new Date().toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: 11 }}>{user.email || 'Guest'} — generated {new Date().toLocaleString('en-IN')}</div>
               <div style={{ fontSize: 11, marginTop: 4 }}>
                 Cash In {money(totals.cashIn)} · Cash Out {money(totals.cashOut)} · Balance {money(totals.balance)}
               </div>
