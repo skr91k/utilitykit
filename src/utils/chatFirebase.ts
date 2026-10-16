@@ -265,24 +265,16 @@ export const isSupportOnline = async (): Promise<boolean> => {
 // TELEGRAM NOTIFICATION
 // ========================================
 
-const TELEGRAM_TOKEN = '8645676544:AAEUCmnMYbm5zYz_Dcxyf-XtyYTpVLCho8k';
-const TELEGRAM_CHAT = '833076019';
-
 export const sendTelegramNotification = async (
   senderName: string,
   message: string,
   messageType: string
 ): Promise<void> => {
   try {
-    const text = `💬 New message from ${senderName}\n\n${messageType === 'text' ? message : `[${messageType}]`}`;
+    const text = `💬 New message from ${senderName}\n\n${messageType === 'text' ? message : `[${messageType}]`}\n\nhttps://utilitykit.web.app/support`;
 
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    await fetch(`https://shakirtech.com/tg/send-repeat?text=${encodeURIComponent(text)}&count=5`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT,
-        text: text,
-      }),
     });
   } catch (e) {
     console.log('Failed to send Telegram notification');
