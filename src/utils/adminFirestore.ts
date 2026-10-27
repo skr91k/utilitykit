@@ -41,7 +41,7 @@ try {
 /** Mirror of the isAdmin() allow-list in firestore.rules — keep both in sync. */
 export const ADMIN_EMAILS = [
   'emst.shakir@gmail.com',
-  'shakir.kadakkadan@gmail.com',
+  'shakirkadakkadan@gmail.com',
   '111shakir@gmail.com',
 ];
 
