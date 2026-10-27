@@ -13,10 +13,10 @@ service cloud.firestore {
       return request.auth.token.email != null;
     }
 
-    // Helper function to check if user is the support admin
-    // IMPORTANT: Replace 'SUPPORT_ADMIN_UID' with your actual support account UID
+    // Support dashboard (/support): the original support account plus every
+    // isAdmin() email. Keep in sync with isSupportUser() in src/utils/chatFirebase.ts.
     function isSupportAdmin() {
-      return request.auth.uid == 'vka12e2umlZS89BObKGl5hpthej2';
+      return request.auth.uid == 'vka12e2umlZS89BObKGl5hpthej2' || isAdmin();
     }
 
     // Helper function to check if user owns the resource
@@ -32,7 +32,8 @@ service cloud.firestore {
              request.auth.token.email_verified == true &&
              request.auth.token.email in [
                'emst.shakir@gmail.com',
-               'shakir.kadakkadan@gmail.com'
+               'shakir.kadakkadan@gmail.com',
+               '111shakir@gmail.com'
              ];
     }
 

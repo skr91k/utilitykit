@@ -42,6 +42,7 @@ try {
 export const ADMIN_EMAILS = [
   'emst.shakir@gmail.com',
   'shakir.kadakkadan@gmail.com',
+  '111shakir@gmail.com',
 ];
 
 export function isAdminUser(user: User | null): boolean {

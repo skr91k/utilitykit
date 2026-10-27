@@ -8,7 +8,7 @@ import {
   sendMessage,
   uploadFile,
   updateSupportPresence,
-  SUPPORT_UID,
+  isSupportUser,
 } from '../utils/chatFirebase'
 import type { ChatMessage, ChatRoom } from '../utils/chatFirebase'
 import './ContactUs.css'
@@ -55,7 +55,7 @@ export function SupportChat() {
   })
 
   // Check if user is support admin
-  const isSupport = user?.uid === SUPPORT_UID
+  const isSupport = isSupportUser(user)
 
   // Update presence every 30 seconds while on this page
   useEffect(() => {

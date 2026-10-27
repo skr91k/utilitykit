@@ -12,6 +12,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { firestore } from './counterFirebase';
+import { isAdminUser } from './adminFirestore';
+import type { User } from './firebase';
 
 // ========================================
 // CONFIGURATION - Update these values
@@ -20,6 +22,11 @@ import { firestore } from './counterFirebase';
 // Support person UID - the Firebase UID of the account that receives all support messages
 // To find this: login with the support account, open console, run: firebase.auth().currentUser.uid
 export const SUPPORT_UID = 'vka12e2umlZS89BObKGl5hpthej2';
+
+// Who may use the support dashboard: the original support account plus every
+// ADMIN_EMAILS account. Mirrors isSupportAdmin() in firestore.rules.
+export const isSupportUser = (user: User | null): boolean =>
+  user?.uid === SUPPORT_UID || isAdminUser(user);
 
 // File upload server configuration
 const FILE_UPLOAD_URL = 'https://shakirtech.com/imageservice/contactus';
