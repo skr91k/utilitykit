@@ -14,6 +14,7 @@ interface TaskCalendarProps {
   onPrevTask?: () => void;
   onNextTask?: () => void;
   onToggleAll?: () => void;
+  onTitleClick?: () => void;
 }
 
 // 0..1 completion of a task on a day; indefinite tasks count as done once started
@@ -27,7 +28,7 @@ const scoreColor = (score: number): string =>
   score <= 0 ? 'transparent' : `rgba(76, 175, 80, ${0.2 + score * 0.6})`; // 0.2 to 0.8 opacity
 
 export function TaskCalendar({
-  title, tasks, progress, allMode, onMonthChange, onSelectDate, onBack, onPrevTask, onNextTask, onToggleAll,
+  title, tasks, progress, allMode, onMonthChange, onSelectDate, onBack, onPrevTask, onNextTask, onToggleAll, onTitleClick,
 }: TaskCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
@@ -147,22 +148,32 @@ export function TaskCalendar({
 
   return (
     <div className="task-calendar">
+      <button className="back-link" onClick={onBack}>← Tasks</button>
       <div className="calendar-header">
-        <button className="back-btn" onClick={onBack}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M19 12H5M12 19l-7-7 7-7"/>
-          </svg>
-        </button>
         {onPrevTask && (
-          <button className="task-switch-btn" onClick={onPrevTask} aria-label="Previous task">
+          <button
+            className={`task-switch-btn ${allMode ? 'dimmed' : ''}`}
+            onClick={onPrevTask}
+            aria-label={allMode ? 'Show single task' : 'Previous task'}
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 18l-6-6 6-6"/>
             </svg>
           </button>
         )}
-        <h2>{title}</h2>
+        <h2
+          className={allMode ? 'dimmed' : ''}
+          onClick={onTitleClick}
+          role={onTitleClick ? 'button' : undefined}
+        >
+          {title}
+        </h2>
         {onNextTask && (
-          <button className="task-switch-btn" onClick={onNextTask} aria-label="Next task">
+          <button
+            className={`task-switch-btn ${allMode ? 'dimmed' : ''}`}
+            onClick={onNextTask}
+            aria-label={allMode ? 'Show single task' : 'Next task'}
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 18l6-6-6-6"/>
             </svg>

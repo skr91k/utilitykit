@@ -511,21 +511,6 @@
   background: rgba(100, 108, 255, 0.1);
 }
 
-.calendar-header .back-btn {
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: #646cff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.calendar-header .back-btn:hover {
-  background: rgba(100, 108, 255, 0.1);
-}
-
 .calendar-nav {
   display: flex;
   justify-content: space-between;
@@ -815,6 +800,15 @@
 }
 
 /* All-tasks toggle + date task picker */
+.calendar-header .dimmed {
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.calendar-header .dimmed:hover {
+  opacity: 0.75;
+}
+
 .calendar-header .all-tasks-btn {
   flex-shrink: 0;
   padding: 6px 12px;
