@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useSEO } from '../utils/useSEO'
 import { useAuth } from '../utils/useAuth'
@@ -25,6 +25,27 @@ import './Counter.css'
 type ViewMode = 'tasks' | 'calendar' | 'counter'
 
 const ALL_TASKS = 'all'
+
+// Remembers the "All" calendar toggle across visits (per browser).
+// Value: the last single task id to show dimmed, or '' if none.
+const ALL_MODE_KEY = 'counter_all_mode'
+
+const readAllMode = (): string | null => {
+  try {
+    return localStorage.getItem(ALL_MODE_KEY)
+  } catch {
+    return null
+  }
+}
+
+const writeAllMode = (lastTaskId: string | null) => {
+  try {
+    if (lastTaskId === null) localStorage.removeItem(ALL_MODE_KEY)
+    else localStorage.setItem(ALL_MODE_KEY, lastTaskId)
+  } catch {
+    // storage unavailable (private mode etc.) - just don't persist
+  }
+}
 
 function Counter() {
   const { user, loading, login, loginAnonymous } = useAuth()
@@ -115,6 +136,22 @@ function Counter() {
   useEffect(() => {
     localStorage.setItem('counter_delay', delayMs.toString())
   }, [delayMs])
+
+  // Opening /counter with "All" remembered: push the All calendar on top of the
+  // task list, so back still returns to Tasks. Only once per page load, so
+  // going back to Tasks doesn't bounce straight into All again.
+  const autoOpenedAllRef = useRef(false)
+  useEffect(() => {
+    if (autoOpenedAllRef.current || !user || tasksLoading) return
+    autoOpenedAllRef.current = true
+    if (selectedTaskId) return // landed on a specific view, respect the URL
+    const remembered = readAllMode()
+    if (remembered === null) return
+    if (tasks.filter((t) => !t.isDefault).length < 2) return
+    const params: Record<string, string> = { task: ALL_TASKS }
+    if (remembered) params.last = remembered
+    setSearchParams(params, { state: { counterFlow: true } })
+  }, [user, tasksLoading, selectedTaskId, tasks, setSearchParams])
 
   // Unknown task id in URL (deleted task, stale link) -> back to task list
   useEffect(() => {
@@ -335,8 +372,10 @@ function Counter() {
   // Replaces the history entry, like prev/next, so back still lands on the task list.
   const toggleAllTasks = () => {
     if (isAllView) {
+      writeAllMode(null)
       if (lastCalendarTask) setSearchParams({ task: lastCalendarTask.id }, { replace: true, state: location.state })
     } else if (selectedTask) {
+      writeAllMode(selectedTask.id)
       setSearchParams({ task: ALL_TASKS, last: selectedTask.id }, { replace: true, state: location.state })
     }
   }

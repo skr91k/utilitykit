@@ -801,12 +801,12 @@
 
 /* All-tasks toggle + date task picker */
 .calendar-header .dimmed {
-  opacity: 0.5;
+  opacity: 0.25;
   cursor: pointer;
 }
 
 .calendar-header .dimmed:hover {
-  opacity: 0.75;
+  opacity: 0.5;
 }
 
 .calendar-header .all-tasks-btn {
