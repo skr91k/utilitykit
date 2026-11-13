@@ -68,6 +68,7 @@ export const COLLECTION_TEMPLATES = [
   'users/{uid}/pastes',
   'users/{uid}/fuelTrips',
   'users/{uid}/moneyTransactions',
+  'users/{uid}/bookmarks',
   'chatRooms',
   'chatRooms/{chatRoomId}/messages',
   'presence',

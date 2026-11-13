@@ -484,6 +484,31 @@
   margin: 0;
   color: #fff;
   font-size: 1.3rem;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-header .task-switch-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid #646cff;
+  color: #646cff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-header .task-switch-btn:hover {
+  background: rgba(100, 108, 255, 0.1);
 }
 
 .calendar-header .back-btn {
@@ -720,3 +745,17 @@
   background: #66bb6a;
 }
 
+
+.edit-task-btn {
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid #646cff;
+  border-radius: 8px;
+  color: #646cff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.edit-task-btn:hover {
+  background: rgba(100, 108, 255, 0.1);
+}

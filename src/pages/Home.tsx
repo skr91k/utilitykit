@@ -6,6 +6,7 @@ import './Home.css'
 const utilities: { id: number; icon: string; name: string; path: string; description: string; keywords?: string }[] = [
   { id: 1, icon: '🕌', name: 'Prayer Times', path: '/prayer', description: 'Islamic prayer times calculator', keywords: 'adhan azan adan' },
   { id: 2, icon: '✅', name: 'Todo', path: '/todo', description: 'Todo list with a calendar view — Google or guest login, synced across devices' },
+  { id: 30, icon: '🔖', name: 'Bookmark Manager', path: '/bookmarks', description: 'Paste a link to save it — title & icon filled in, Google or guest login', keywords: 'links favorites' },
   { id: 3, icon: '💳', name: 'MoneyFlow', path: '/money', description: 'Cash in & out manager — balance, methods, search & PDF export' },
   { id: 4, icon: '💸', name: 'Split Expense', path: '/split', description: 'Split bills with friends, shareable via link' },
   { id: 5, icon: '🔳', name: 'QR Code Generator & Reader', path: '/qr', description: 'Generate or scan QR codes' },

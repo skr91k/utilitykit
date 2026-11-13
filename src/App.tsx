@@ -24,6 +24,7 @@ import { MoneyFlow } from './pages/MoneyFlow'
 import { PasswordGenerator } from './pages/PasswordGenerator'
 import { TotpManager } from './pages/TotpManager'
 import { TodoApp } from './pages/TodoApp'
+import { Bookmarks } from './pages/Bookmarks'
 import { MediaBrowser } from './pages/MediaBrowser'
 import { GrammarFixer } from './pages/GrammarFixer'
 import { AdminData } from './pages/AdminData'
@@ -59,6 +60,7 @@ function App() {
         <Route path="/password" element={<PasswordGenerator />} />
         <Route path="/totp" element={<TotpManager />} />
         <Route path="/todo" element={<TodoApp />} />
+        <Route path="/bookmarks" element={<Bookmarks />} />
         <Route path="/media" element={<MediaBrowser />} />
         <Route path="/grammar" element={<GrammarFixer />} />
         {/* Unlisted: read-only Firestore console, admin accounts only. */}

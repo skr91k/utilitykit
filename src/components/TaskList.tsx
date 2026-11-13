@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { CounterTask } from '../utils/counterFirebase';
+import { TaskForm } from './TaskForm';
+import type { TaskFormValues } from './TaskForm';
 
 interface TaskListProps {
   tasks: CounterTask[];
@@ -10,26 +12,12 @@ interface TaskListProps {
   onDeleteTask: (taskId: string) => void;
 }
 
-interface TaskFormData {
-  name: string;
-  targetCount: string;
-  countAtOnce: string;
-  isIndefinite: boolean;
-}
-
 export function TaskList({ tasks, loading, onSelectTask, onAddTask, onEditTask, onDeleteTask }: TaskListProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<CounterTask | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<CounterTask | null>(null);
-  const [formData, setFormData] = useState<TaskFormData>({
-    name: '',
-    targetCount: '10',
-    countAtOnce: '1',
-    isIndefinite: false,
-  });
 
-  const resetForm = () => {
-    setFormData({ name: '', targetCount: '10', countAtOnce: '1', isIndefinite: false });
+  const closeForm = () => {
     setShowForm(false);
     setEditingTask(null);
   };
@@ -41,31 +29,17 @@ export function TaskList({ tasks, loading, onSelectTask, onAddTask, onEditTask, 
     }
   };
 
-  const handleSubmit = () => {
-    if (!formData.name.trim()) return;
-
-    const taskData = {
-      name: formData.name.trim(),
-      targetCount: formData.isIndefinite ? null : parseInt(formData.targetCount) || 10,
-      countAtOnce: parseInt(formData.countAtOnce) || 1,
-    };
-
+  const handleSubmit = (values: TaskFormValues) => {
     if (editingTask) {
-      onEditTask(editingTask.id, taskData);
+      onEditTask(editingTask.id, values);
     } else {
-      onAddTask(taskData);
+      onAddTask(values);
     }
-    resetForm();
+    closeForm();
   };
 
   const startEdit = (task: CounterTask) => {
     setEditingTask(task);
-    setFormData({
-      name: task.name,
-      targetCount: task.targetCount?.toString() || '10',
-      countAtOnce: task.countAtOnce.toString(),
-      isIndefinite: task.targetCount === null,
-    });
     setShowForm(true);
   };
 
@@ -77,56 +51,7 @@ export function TaskList({ tasks, loading, onSelectTask, onAddTask, onEditTask, 
       </div>
 
       {showForm && (
-        <div className="task-form-overlay">
-          <div className="task-form">
-            <h3>{editingTask ? 'Edit Task' : 'New Task'}</h3>
-            <div className="form-group">
-              <label>Task Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Daily Push-ups"
-              />
-            </div>
-            <div className="form-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={formData.isIndefinite}
-                  onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
-                />
-                Indefinite (no target)
-              </label>
-            </div>
-            {!formData.isIndefinite && (
-              <div className="form-group">
-                <label>Target Count</label>
-                <input
-                  type="number"
-                  value={formData.targetCount}
-                  onChange={(e) => setFormData({ ...formData, targetCount: e.target.value })}
-                  min="1"
-                />
-              </div>
-            )}
-            <div className="form-group">
-              <label>Count at Once (increment per click)</label>
-              <input
-                type="number"
-                value={formData.countAtOnce}
-                onChange={(e) => setFormData({ ...formData, countAtOnce: e.target.value })}
-                min="1"
-              />
-            </div>
-            <div className="form-actions">
-              <button className="cancel-btn" onClick={resetForm}>Cancel</button>
-              <button className="save-btn" onClick={handleSubmit}>
-                {editingTask ? 'Update' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <TaskForm task={editingTask} onSubmit={handleSubmit} onCancel={closeForm} />
       )}
 
       {deleteConfirm && (

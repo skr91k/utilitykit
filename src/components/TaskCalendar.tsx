@@ -7,9 +7,11 @@ interface TaskCalendarProps {
   onMonthChange: (month: string) => void;
   onSelectDate: (date: string) => void;
   onBack: () => void;
+  onPrevTask?: () => void;
+  onNextTask?: () => void;
 }
 
-export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBack }: TaskCalendarProps) {
+export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBack, onPrevTask, onNextTask }: TaskCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
 
@@ -107,7 +109,21 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
         </button>
+        {onPrevTask && (
+          <button className="task-switch-btn" onClick={onPrevTask} aria-label="Previous task">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+        )}
         <h2>{task.name}</h2>
+        {onNextTask && (
+          <button className="task-switch-btn" onClick={onNextTask} aria-label="Next task">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className="calendar-nav">

@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useSEO } from '../utils/useSEO'
 import { useAuth } from '../utils/useAuth'
 import { TaskList } from '../components/TaskList'
 import { TaskCalendar } from '../components/TaskCalendar'
+import { TaskForm } from '../components/TaskForm'
+import type { TaskFormValues } from '../components/TaskForm'
 import {
   fetchUserTasks,
   createTask,
@@ -30,15 +32,44 @@ function Counter() {
     keywords: 'counter, tally counter, click counter, people counter, digital counter, counting app, tasbeeh counter, tasbih counter, dhikr counter, zikr counter, islamic counter, prayer counter, adhkar counter, muslim counter, digital tasbeeh, عداد تسبيح, عداد الذكر, تسبيح, أذكار, أستغفر الله, اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ, لَا إِلٰهَ إِلَّا اللّٰهُ, سبحان الله, الحمد لله, الله أكبر',
   })
 
-  // View state
-  const [viewMode, setViewMode] = useState<ViewMode>('tasks')
-  const [selectedTask, setSelectedTask] = useState<CounterTask | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>('')
+  // View state lives in the URL so browser back walks tasks <- calendar <- counter:
+  //   /counter                         -> task list
+  //   /counter?task=<id>               -> calendar (or counter for the default task)
+  //   /counter?task=<id>&date=<date>   -> counter
+  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const selectedTaskId = searchParams.get('task')
+  const selectedDate = searchParams.get('date') ?? ''
 
   // Task data
   const [tasks, setTasks] = useState<CounterTask[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
-  const [progress, setProgress] = useState<Record<string, DayProgress>>({})
+  // Progress is tagged with its task so switching tasks never shows stale days
+  const [progressState, setProgressState] = useState<{ taskId: string; data: Record<string, DayProgress> } | null>(null)
+
+  const progress = progressState && progressState.taskId === selectedTaskId ? progressState.data : {}
+  const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null
+  const viewMode: ViewMode = !selectedTask
+    ? 'tasks'
+    : selectedTask.isDefault || selectedDate
+      ? 'counter'
+      : 'calendar'
+
+  // Forward step inside the counter flow: push a history entry.
+  const goTo = (params: Record<string, string>) => {
+    setSearchParams(params, { state: { counterFlow: true } })
+  }
+
+  // Back step: pop history if we pushed it, otherwise (deep link / refresh
+  // without history) replace with the parent view.
+  const goBack = (parent: Record<string, string>) => {
+    if ((location.state as { counterFlow?: boolean } | null)?.counterFlow) {
+      navigate(-1)
+    } else {
+      setSearchParams(parent, { replace: true })
+    }
+  }
 
   // Counter state
   const [count, setCount] = useState<number | null>(null)
@@ -51,6 +82,7 @@ function Counter() {
   const [showFinishDialog, setShowFinishDialog] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [finishShown, setFinishShown] = useState(false)
+  const [showEditForm, setShowEditForm] = useState(false)
 
   // Load tasks when user logs in
   useEffect(() => {
@@ -68,19 +100,32 @@ function Counter() {
     localStorage.setItem('counter_delay', delayMs.toString())
   }, [delayMs])
 
-  // Load count when entering counter mode
+  // Unknown task id in URL (deleted task, stale link) -> back to task list
   useEffect(() => {
-    if (viewMode === 'counter' && selectedTask && user) {
-      setCount(null) // Show loading
-      if (selectedTask.isDefault) {
-        getDefaultTaskCount(user.uid).then(setCount)
-      } else if (selectedDate) {
-        getDayProgress(user.uid, selectedTask.id, selectedDate).then((prog) => {
-          setCount(prog?.count || 0)
-        })
-      }
+    if (!tasksLoading && selectedTaskId && !selectedTask) {
+      setSearchParams({}, { replace: true })
     }
-  }, [viewMode, selectedTask, selectedDate, user])
+  }, [tasksLoading, selectedTaskId, selectedTask, setSearchParams])
+
+  // Load count when entering counter mode (keyed on ids so editing the task
+  // doesn't refetch and clobber an in-flight count)
+  const selectedIsDefault = selectedTask?.isDefault ?? false
+  useEffect(() => {
+    if (viewMode !== 'counter' || !selectedTaskId || !user) return
+    setCount(null) // Show loading
+    setFinishShown(false)
+    setShowSettings(false)
+    setShowEditForm(false)
+    let cancelled = false
+    if (selectedIsDefault) {
+      getDefaultTaskCount(user.uid).then((c) => { if (!cancelled) setCount(c) })
+    } else if (selectedDate) {
+      getDayProgress(user.uid, selectedTaskId, selectedDate).then((prog) => {
+        if (!cancelled) setCount(prog?.count || 0)
+      })
+    }
+    return () => { cancelled = true }
+  }, [viewMode, selectedTaskId, selectedIsDefault, selectedDate, user])
 
   const playBeep = () => {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
@@ -148,9 +193,9 @@ function Counter() {
       e.preventDefault()
     }
 
-    if (cooldown || showFinishDialog) return
+    if (cooldown || showFinishDialog || showEditForm || showResetConfirm) return
     handleIncrement()
-  }, [cooldown, showFinishDialog, handleIncrement])
+  }, [cooldown, showFinishDialog, showEditForm, showResetConfirm, handleIncrement])
 
   // Keyboard support for spacebar
   useEffect(() => {
@@ -196,29 +241,17 @@ function Counter() {
   const handleFinish = () => {
     setShowFinishDialog(false)
     playBeep()
-    // Navigate back to calendar
-    setViewMode('calendar')
-    // Refresh progress
-    if (user && selectedTask) {
-      const month = selectedDate.substring(0, 7)
-      fetchTaskProgress(user.uid, selectedTask.id, month).then(setProgress)
-    }
+    // Back to calendar (it refetches progress on mount)
+    handleBackFromCounter()
   }
 
   const handleContinue = () => {
     setShowFinishDialog(false)
   }
 
+  // Default task goes directly to counter; others show calendar first
   const handleSelectTask = (task: CounterTask) => {
-    setSelectedTask(task)
-    setFinishShown(false)
-    if (task.isDefault) {
-      // Default task goes directly to counter
-      setViewMode('counter')
-    } else {
-      // Other tasks show calendar
-      setViewMode('calendar')
-    }
+    goTo({ task: task.id })
   }
 
   const handleAddTask = async (taskData: Omit<CounterTask, 'id' | 'isDefault' | 'createdAt'>) => {
@@ -239,42 +272,43 @@ function Counter() {
     setTasks(tasks.filter((t) => t.id !== taskId))
   }
 
-  const handleMonthChange = async (month: string) => {
-    if (!user || !selectedTask) return
-    const prog = await fetchTaskProgress(user.uid, selectedTask.id, month)
-    setProgress(prog)
-  }
+  const handleMonthChange = useCallback(async (month: string) => {
+    if (!user || !selectedTaskId) return
+    const prog = await fetchTaskProgress(user.uid, selectedTaskId, month)
+    setProgressState({ taskId: selectedTaskId, data: prog })
+  }, [user, selectedTaskId])
 
   const handleSelectDate = (date: string) => {
-    setSelectedDate(date)
-    setViewMode('counter')
-    setFinishShown(false)
+    if (!selectedTaskId) return
+    goTo({ task: selectedTaskId, date })
   }
 
   const handleBackFromCounter = () => {
-    if (selectedTask?.isDefault) {
-      // Default task: go back to task list, clear everything
-      setViewMode('tasks')
-      setSelectedTask(null)
-      setSelectedDate('')
-      setCount(0)
+    if (!selectedTask || selectedTask.isDefault) {
+      goBack({})
     } else {
-      // Non-default task: go back to calendar, keep selectedTask
-      // Refresh progress
-      if (user && selectedTask && selectedDate) {
-        const month = selectedDate.substring(0, 7)
-        fetchTaskProgress(user.uid, selectedTask.id, month).then(setProgress)
-      }
-      setViewMode('calendar')
-      setSelectedDate('')
-      setCount(0)
+      goBack({ task: selectedTask.id })
     }
   }
 
   const handleBackFromCalendar = () => {
-    setViewMode('tasks')
-    setSelectedTask(null)
-    setProgress({})
+    goBack({})
+  }
+
+  // Circular prev/next between calendar tasks (default task has no calendar).
+  // Replaces the history entry so browser back still lands on the task list.
+  const calendarTasks = tasks.filter((t) => !t.isDefault)
+  const switchCalendarTask = (step: 1 | -1) => {
+    const idx = calendarTasks.findIndex((t) => t.id === selectedTaskId)
+    if (idx === -1 || calendarTasks.length < 2) return
+    const next = calendarTasks[(idx + step + calendarTasks.length) % calendarTasks.length]
+    setSearchParams({ task: next.id }, { replace: true, state: location.state })
+  }
+
+  const handleEditFromCounter = async (values: TaskFormValues) => {
+    if (!selectedTask) return
+    setShowEditForm(false)
+    await handleEditTask(selectedTask.id, values)
   }
 
   if (loading) {
@@ -314,6 +348,17 @@ function Counter() {
     )
   }
 
+  // Deep link / refresh into a task while tasks are still loading
+  if (selectedTaskId && !selectedTask) {
+    return (
+      <div className="counter-page">
+        <div className="counter-circle">
+          <span className="counter-value" style={{ fontSize: '2rem' }}>...</span>
+        </div>
+      </div>
+    )
+  }
+
   // Task List View
   if (viewMode === 'tasks') {
     return (
@@ -335,13 +380,14 @@ function Counter() {
   if (viewMode === 'calendar' && selectedTask) {
     return (
       <div className="counter-page">
-        <Link to="/" className="back-link">← Home</Link>
         <TaskCalendar
           task={selectedTask}
           progress={progress}
           onMonthChange={handleMonthChange}
           onSelectDate={handleSelectDate}
           onBack={handleBackFromCalendar}
+          onPrevTask={calendarTasks.length > 1 ? () => switchCalendarTask(-1) : undefined}
+          onNextTask={calendarTasks.length > 1 ? () => switchCalendarTask(1) : undefined}
         />
       </div>
     )
@@ -401,10 +447,31 @@ function Counter() {
               onChange={(e) => setDelayMs(parseInt(e.target.value, 10))}
             />
           </div>
+          {selectedTask && !selectedTask.isDefault && (
+            <div className="setting-item">
+              <button
+                className="edit-task-btn"
+                onClick={() => {
+                  setShowSettings(false)
+                  setShowEditForm(true)
+                }}
+              >
+                Edit Task
+              </button>
+            </div>
+          )}
           <div className="setting-item helper-text">
             * Keyboard users: Press [Space] to act as click.
           </div>
         </div>
+      )}
+
+      {showEditForm && selectedTask && (
+        <TaskForm
+          task={selectedTask}
+          onSubmit={handleEditFromCounter}
+          onCancel={() => setShowEditForm(false)}
+        />
       )}
 
       {showFinishDialog && (

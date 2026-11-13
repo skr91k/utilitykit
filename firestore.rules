@@ -162,6 +162,22 @@ service cloud.firestore {
                       && request.resource.data.account.size() <= 200;
       }
 
+      // Bookmark manager - guests (anonymous) and Google accounts alike, each
+      // only their own list. url is an http(s) link; title starts as the site
+      // name and is replaced by the fetched page title.
+      match /bookmarks/{bookmarkId} {
+        allow read, delete: if isAuthenticated() && isOwner(userId);
+        allow create, update: if isAuthenticated() && isOwner(userId)
+                              && request.resource.data.keys().hasOnly(['url', 'title', 'createdAt'])
+                              && request.resource.data.url is string
+                              && request.resource.data.url.size() <= 2048
+                              && request.resource.data.url.matches('^https?://.+')
+                              && request.resource.data.title is string
+                              && request.resource.data.title.size() > 0
+                              && request.resource.data.title.size() <= 500
+                              && request.resource.data.createdAt is number;
+      }
+
       // Todo app - guests (anonymous) and Google accounts alike, each only
       // their own list. date is 'YYYY-MM-DD' or '' for no date.
       match /todos/{todoId} {
