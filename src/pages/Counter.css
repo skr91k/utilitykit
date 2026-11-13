@@ -759,3 +759,150 @@
 .edit-task-btn:hover {
   background: rgba(100, 108, 255, 0.1);
 }
+
+/* Task reorder */
+.task-list-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.reorder-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #646cff;
+  border-radius: 8px;
+  color: #646cff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.reorder-btn:hover {
+  background: rgba(100, 108, 255, 0.1);
+}
+
+.task-item.reordering {
+  cursor: default;
+}
+
+.task-item.reordering:hover {
+  transform: none;
+}
+
+.task-item.dragging {
+  background: #2a2a3e;
+  outline: 1px solid #646cff;
+  opacity: 0.85;
+}
+
+.task-actions .move-btn:hover {
+  background: rgba(100, 108, 255, 0.2);
+  color: #646cff;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  color: #888;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.task-item.dragging .drag-handle {
+  cursor: grabbing;
+  color: #646cff;
+}
+
+/* All-tasks toggle + date task picker */
+.calendar-header .all-tasks-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 18px;
+  background: transparent;
+  border: 1px solid #646cff;
+  color: #646cff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.calendar-header .all-tasks-btn:hover {
+  background: rgba(100, 108, 255, 0.1);
+}
+
+.calendar-header .all-tasks-btn.active {
+  background: #646cff;
+  color: #fff;
+}
+
+.task-picker {
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.task-picker h3 {
+  color: #fff;
+}
+
+.task-picker > p {
+  margin-bottom: 16px;
+}
+
+.task-picker-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-picker-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #2a2a3e;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-picker-item:hover {
+  border-color: #646cff;
+}
+
+.task-picker-item.done {
+  opacity: 0.6;
+}
+
+.task-picker-item.done .task-picker-status {
+  color: #4caf50;
+}
+
+.task-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-picker-status {
+  flex-shrink: 0;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+.task-picker .finish-actions {
+  justify-content: center;
+}

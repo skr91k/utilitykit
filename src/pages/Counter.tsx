@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useSEO } from '../utils/useSEO'
 import { useAuth } from '../utils/useAuth'
@@ -11,6 +11,7 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  reorderTasks,
   fetchTaskProgress,
   updateDayProgress,
   getDayProgress,
@@ -22,6 +23,8 @@ import type { CounterTask, DayProgress } from '../utils/counterFirebase'
 import './Counter.css'
 
 type ViewMode = 'tasks' | 'calendar' | 'counter'
+
+const ALL_TASKS = 'all'
 
 function Counter() {
   const { user, loading, login, loginAnonymous } = useAuth()
@@ -36,25 +39,41 @@ function Counter() {
   //   /counter                         -> task list
   //   /counter?task=<id>               -> calendar (or counter for the default task)
   //   /counter?task=<id>&date=<date>   -> counter
+  //   /counter?task=all                -> combined calendar of all tasks
+  //   /counter?task=<id>&date=<date>&from=all -> counter, back goes to combined calendar
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
   const selectedTaskId = searchParams.get('task')
   const selectedDate = searchParams.get('date') ?? ''
+  const isAllView = selectedTaskId === ALL_TASKS
+  const fromAll = searchParams.get('from') === ALL_TASKS
 
   // Task data
   const [tasks, setTasks] = useState<CounterTask[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
-  // Progress is tagged with its task so switching tasks never shows stale days
-  const [progressState, setProgressState] = useState<{ taskId: string; data: Record<string, DayProgress> } | null>(null)
+  // Progress (taskId -> date -> progress) is tagged with the calendar it was
+  // loaded for (a task id or 'all') so switching never shows stale days
+  const [progressState, setProgressState] = useState<{ key: string; data: Record<string, Record<string, DayProgress>> } | null>(null)
 
-  const progress = progressState && progressState.taskId === selectedTaskId ? progressState.data : {}
-  const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null
-  const viewMode: ViewMode = !selectedTask
-    ? 'tasks'
-    : selectedTask.isDefault || selectedDate
-      ? 'counter'
-      : 'calendar'
+  const progress = progressState && progressState.key === selectedTaskId ? progressState.data : {}
+  const selectedTask = selectedTaskId && !isAllView ? tasks.find((t) => t.id === selectedTaskId) ?? null : null
+  const calendarTasks = tasks.filter((t) => !t.isDefault)
+  const calendarTaskIdsKey = calendarTasks.map((t) => t.id).join(',')
+  const viewMode: ViewMode = isAllView
+    ? 'calendar'
+    : !selectedTask
+      ? 'tasks'
+      : selectedTask.isDefault || selectedDate
+        ? 'counter'
+        : 'calendar'
+
+  // Last single-task calendar viewed, so toggling "All" off returns to it
+  const lastCalendarTaskRef = useRef<string | null>(null)
+  const singleCalendarTaskId = viewMode === 'calendar' && selectedTask ? selectedTask.id : null
+  useEffect(() => {
+    if (singleCalendarTaskId) lastCalendarTaskRef.current = singleCalendarTaskId
+  }, [singleCalendarTaskId])
 
   // Forward step inside the counter flow: push a history entry.
   const goTo = (params: Record<string, string>) => {
@@ -102,10 +121,10 @@ function Counter() {
 
   // Unknown task id in URL (deleted task, stale link) -> back to task list
   useEffect(() => {
-    if (!tasksLoading && selectedTaskId && !selectedTask) {
+    if (!tasksLoading && selectedTaskId && !selectedTask && !isAllView) {
       setSearchParams({}, { replace: true })
     }
-  }, [tasksLoading, selectedTaskId, selectedTask, setSearchParams])
+  }, [tasksLoading, selectedTaskId, selectedTask, isAllView, setSearchParams])
 
   // Load count when entering counter mode (keyed on ids so editing the task
   // doesn't refetch and clobber an in-flight count)
@@ -266,6 +285,20 @@ function Counter() {
     setTasks(tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)))
   }
 
+  const handleReorderTasks = async (orderedIds: string[]) => {
+    if (!user) return
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    const defaults = tasks.filter((t) => t.isDefault)
+    const reordered = orderedIds
+      .map((id, index): CounterTask | null => {
+        const t = byId.get(id)
+        return t ? { ...t, order: index } : null
+      })
+      .filter((t): t is CounterTask => t !== null)
+    setTasks([...defaults, ...reordered])
+    await reorderTasks(user.uid, orderedIds)
+  }
+
   const handleDeleteTask = async (taskId: string) => {
     if (!user) return
     await deleteTask(user.uid, taskId)
@@ -274,20 +307,37 @@ function Counter() {
 
   const handleMonthChange = useCallback(async (month: string) => {
     if (!user || !selectedTaskId) return
-    const prog = await fetchTaskProgress(user.uid, selectedTaskId, month)
-    setProgressState({ taskId: selectedTaskId, data: prog })
-  }, [user, selectedTaskId])
+    const ids = selectedTaskId === ALL_TASKS
+      ? calendarTaskIdsKey.split(',').filter(Boolean)
+      : [selectedTaskId]
+    const results = await Promise.all(ids.map((id) => fetchTaskProgress(user.uid, id, month)))
+    const data: Record<string, Record<string, DayProgress>> = {}
+    ids.forEach((id, i) => { data[id] = results[i] })
+    setProgressState({ key: selectedTaskId, data })
+  }, [user, selectedTaskId, calendarTaskIdsKey])
 
-  const handleSelectDate = (date: string) => {
-    if (!selectedTaskId) return
-    goTo({ task: selectedTaskId, date })
+  const handleSelectDate = (taskId: string, date: string) => {
+    goTo(isAllView ? { task: taskId, date, from: ALL_TASKS } : { task: taskId, date })
   }
 
   const handleBackFromCounter = () => {
     if (!selectedTask || selectedTask.isDefault) {
       goBack({})
+    } else if (fromAll) {
+      goBack({ task: ALL_TASKS })
     } else {
       goBack({ task: selectedTask.id })
+    }
+  }
+
+  // "All" toggles between the combined calendar and the last single-task one.
+  // Replaces the history entry, like prev/next, so back still lands on the task list.
+  const toggleAllTasks = () => {
+    if (isAllView) {
+      const last = calendarTasks.find((t) => t.id === lastCalendarTaskRef.current) ?? calendarTasks[0]
+      if (last) setSearchParams({ task: last.id }, { replace: true, state: location.state })
+    } else {
+      setSearchParams({ task: ALL_TASKS }, { replace: true, state: location.state })
     }
   }
 
@@ -297,7 +347,6 @@ function Counter() {
 
   // Circular prev/next between calendar tasks (default task has no calendar).
   // Replaces the history entry so browser back still lands on the task list.
-  const calendarTasks = tasks.filter((t) => !t.isDefault)
   const switchCalendarTask = (step: 1 | -1) => {
     const idx = calendarTasks.findIndex((t) => t.id === selectedTaskId)
     if (idx === -1 || calendarTasks.length < 2) return
@@ -349,7 +398,7 @@ function Counter() {
   }
 
   // Deep link / refresh into a task while tasks are still loading
-  if (selectedTaskId && !selectedTask) {
+  if ((selectedTaskId && !selectedTask && !isAllView) || (isAllView && tasksLoading)) {
     return (
       <div className="counter-page">
         <div className="counter-circle">
@@ -371,23 +420,28 @@ function Counter() {
           onAddTask={handleAddTask}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
+          onReorderTasks={handleReorderTasks}
         />
       </div>
     )
   }
 
   // Calendar View
-  if (viewMode === 'calendar' && selectedTask) {
+  if (viewMode === 'calendar') {
+    const canSwitch = !isAllView && calendarTasks.length > 1
     return (
       <div className="counter-page">
         <TaskCalendar
-          task={selectedTask}
+          title={isAllView ? 'All Tasks' : selectedTask?.name ?? ''}
+          tasks={isAllView ? calendarTasks : selectedTask ? [selectedTask] : []}
           progress={progress}
+          allMode={isAllView}
           onMonthChange={handleMonthChange}
           onSelectDate={handleSelectDate}
           onBack={handleBackFromCalendar}
-          onPrevTask={calendarTasks.length > 1 ? () => switchCalendarTask(-1) : undefined}
-          onNextTask={calendarTasks.length > 1 ? () => switchCalendarTask(1) : undefined}
+          onPrevTask={canSwitch ? () => switchCalendarTask(-1) : undefined}
+          onNextTask={canSwitch ? () => switchCalendarTask(1) : undefined}
+          onToggleAll={calendarTasks.length > 1 ? toggleAllTasks : undefined}
         />
       </div>
     )

@@ -8,7 +8,8 @@ import {
   getDoc,
   getDocs,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import { firebaseConfig } from './firebaseConfig';
@@ -29,6 +30,7 @@ export interface CounterTask {
   countAtOnce: number;
   isDefault: boolean;
   createdAt: number;
+  order?: number; // manual sort position; tasks without it sort by createdAt (after ordered ones)
 }
 
 export interface DayProgress {
@@ -89,10 +91,12 @@ export const fetchUserTasks = async (userId: string): Promise<CounterTask[]> => 
       await setDefaultAdhkarCreatedFlag(userId);
     }
 
+    // Manually ordered tasks use small indices (0..n); never-reordered and
+    // newly created tasks fall back to createdAt, which sorts them after.
     return tasks.sort((a, b) => {
       if (a.isDefault) return -1;
       if (b.isDefault) return 1;
-      return a.createdAt - b.createdAt;
+      return (a.order ?? a.createdAt) - (b.order ?? b.createdAt);
     });
   } catch (error) {
     console.error('Error fetching tasks:', error);
@@ -176,6 +180,15 @@ export const updateTask = async (userId: string, taskId: string, updates: Partia
   if (taskId === 'default') return;
   const taskRef = doc(firestore, 'users', userId, 'counterTasks', taskId);
   await updateDoc(taskRef, updates);
+};
+
+export const reorderTasks = async (userId: string, orderedIds: string[]): Promise<void> => {
+  const batch = writeBatch(firestore);
+  orderedIds.forEach((taskId, index) => {
+    if (taskId === 'default') return;
+    batch.update(doc(firestore, 'users', userId, 'counterTasks', taskId), { order: index });
+  });
+  await batch.commit();
 };
 
 export const deleteTask = async (userId: string, taskId: string): Promise<void> => {

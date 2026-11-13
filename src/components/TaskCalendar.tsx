@@ -2,18 +2,36 @@ import { useState, useEffect, useMemo } from 'react';
 import type { CounterTask, DayProgress } from '../utils/counterFirebase';
 
 interface TaskCalendarProps {
-  task: CounterTask;
-  progress: Record<string, DayProgress>;
+  title: string;
+  // One task in single mode, every calendar task in "All" mode
+  tasks: CounterTask[];
+  // taskId -> date -> progress
+  progress: Record<string, Record<string, DayProgress>>;
+  allMode: boolean;
   onMonthChange: (month: string) => void;
-  onSelectDate: (date: string) => void;
+  onSelectDate: (taskId: string, date: string) => void;
   onBack: () => void;
   onPrevTask?: () => void;
   onNextTask?: () => void;
+  onToggleAll?: () => void;
 }
 
-export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBack, onPrevTask, onNextTask }: TaskCalendarProps) {
+// 0..1 completion of a task on a day; indefinite tasks count as done once started
+const taskScore = (task: CounterTask, dayProgress?: DayProgress): number => {
+  if (!dayProgress || dayProgress.count <= 0) return 0;
+  if (task.targetCount === null) return 1;
+  return Math.min(dayProgress.count / task.targetCount, 1);
+};
+
+const scoreColor = (score: number): string =>
+  score <= 0 ? 'transparent' : `rgba(76, 175, 80, ${0.2 + score * 0.6})`; // 0.2 to 0.8 opacity
+
+export function TaskCalendar({
+  title, tasks, progress, allMode, onMonthChange, onSelectDate, onBack, onPrevTask, onNextTask, onToggleAll,
+}: TaskCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [confirmDate, setConfirmDate] = useState<string | null>(null);
+  const [pickDate, setPickDate] = useState<string | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -48,23 +66,37 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
 
-  const getCompletionColor = (day: number): string => {
+  // Colour + small label for a day cell
+  const getDayInfo = (day: number): { color: string; label: string | null } => {
     const dateStr = getDateString(day);
-    const dayProgress = progress[dateStr];
-
-    if (!dayProgress || dayProgress.count === 0) {
-      return 'transparent';
+    if (!allMode) {
+      const task = tasks[0];
+      const dayProgress = task ? progress[task.id]?.[dateStr] : undefined;
+      return {
+        color: task ? scoreColor(taskScore(task, dayProgress)) : 'transparent',
+        label: dayProgress ? String(dayProgress.count) : null,
+      };
     }
-
-    if (task.targetCount === null) {
-      // Indefinite task - any count shows as completed
-      return dayProgress.count > 0 ? 'rgba(76, 175, 80, 0.8)' : 'transparent';
+    if (tasks.length === 0) return { color: 'transparent', label: null };
+    let total = 0;
+    let done = 0;
+    let started = false;
+    for (const task of tasks) {
+      const dayProgress = progress[task.id]?.[dateStr];
+      const score = taskScore(task, dayProgress);
+      total += score;
+      if (score >= 1) done++;
+      if (dayProgress && dayProgress.count > 0) started = true;
     }
+    return {
+      color: scoreColor(total / tasks.length),
+      label: started ? `${done}/${tasks.length}` : null,
+    };
+  };
 
-    // Calculate completion percentage
-    const percentage = Math.min(dayProgress.count / task.targetCount, 1);
-    const opacity = 0.2 + (percentage * 0.6); // 0.2 to 0.8 opacity
-    return `rgba(76, 175, 80, ${opacity})`;
+  const getTodayString = () => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
   };
 
   const isToday = (day: number): boolean => {
@@ -82,15 +114,27 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
 
   const handleDateClick = (day: number) => {
     const dateStr = getDateString(day);
-    if (isToday(day)) {
-      onSelectDate(dateStr);
+    if (allMode) {
+      setPickDate(dateStr);
+    } else if (isToday(day)) {
+      if (tasks[0]) onSelectDate(tasks[0].id, dateStr);
     } else {
       setConfirmDate(dateStr);
     }
   };
 
+  // Tasks for the picker: not-done first, keeping the user's order within each group
+  const pickerTasks = pickDate
+    ? tasks
+        .map((task) => {
+          const dayProgress = progress[task.id]?.[pickDate];
+          return { task, count: dayProgress?.count ?? 0, done: taskScore(task, dayProgress) >= 1 };
+        })
+        .sort((a, b) => Number(a.done) - Number(b.done))
+    : [];
+
   const formatDisplayDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T00:00:00`); // local midnight, not UTC
     return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
@@ -116,12 +160,21 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
             </svg>
           </button>
         )}
-        <h2>{task.name}</h2>
+        <h2>{title}</h2>
         {onNextTask && (
           <button className="task-switch-btn" onClick={onNextTask} aria-label="Next task">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 18l6-6-6-6"/>
             </svg>
+          </button>
+        )}
+        {onToggleAll && (
+          <button
+            className={`all-tasks-btn ${allMode ? 'active' : ''}`}
+            onClick={onToggleAll}
+            aria-pressed={allMode}
+          >
+            All
           </button>
         )}
       </div>
@@ -148,14 +201,14 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
           <div
             key={index}
             className={`day-cell ${day === null ? 'empty' : ''} ${day && isToday(day) ? 'today' : ''}`}
-            style={day ? { backgroundColor: getCompletionColor(day) } : undefined}
+            style={day ? { backgroundColor: getDayInfo(day).color } : undefined}
             onClick={() => day && handleDateClick(day)}
           >
             {day && (
               <>
                 <span className="day-number">{day}</span>
-                {progress[getDateString(day)] && (
-                  <span className="day-count">{progress[getDateString(day)].count}</span>
+                {getDayInfo(day).label !== null && (
+                  <span className="day-count">{getDayInfo(day).label}</span>
                 )}
               </>
             )}
@@ -184,10 +237,45 @@ export function TaskCalendar({ task, progress, onMonthChange, onSelectDate, onBa
                 Cancel
               </button>
               <button className="finish-btn" onClick={() => {
-                onSelectDate(confirmDate);
+                if (tasks[0]) onSelectDate(tasks[0].id, confirmDate);
                 setConfirmDate(null);
               }}>
                 Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pickDate && (
+        <div className="finish-dialog-overlay" onClick={() => setPickDate(null)}>
+          <div className="finish-dialog task-picker" onClick={(e) => e.stopPropagation()}>
+            <h3>{formatDisplayDate(pickDate)}</h3>
+            <p>
+              {pickDate === getTodayString() ? 'Which task to do?' : 'Not today. Which task to do?'}
+            </p>
+            <ul className="task-picker-list">
+              {pickerTasks.map(({ task, count, done }) => (
+                <li key={task.id}>
+                  <button
+                    className={`task-picker-item ${done ? 'done' : ''}`}
+                    onClick={() => {
+                      setPickDate(null);
+                      onSelectDate(task.id, pickDate);
+                    }}
+                  >
+                    <span className="task-picker-name">{task.name}</span>
+                    <span className="task-picker-status">
+                      {done ? '✓ ' : ''}
+                      {task.targetCount === null ? count : `${count} / ${task.targetCount}`}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="finish-actions">
+              <button className="continue-btn" onClick={() => setPickDate(null)}>
+                Cancel
               </button>
             </div>
           </div>
