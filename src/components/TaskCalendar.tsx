@@ -162,6 +162,7 @@ export function TaskCalendar({
           </button>
         )}
         <h2
+          dir="auto"
           className={allMode ? 'dimmed' : ''}
           onClick={onTitleClick}
           role={onTitleClick ? 'button' : undefined}
@@ -275,7 +276,7 @@ export function TaskCalendar({
                       onSelectDate(task.id, pickDate);
                     }}
                   >
-                    <span className="task-picker-name">{task.name}</span>
+                    <span className="task-picker-name" dir="auto">{task.name}</span>
                     <span className="task-picker-status">
                       {done ? '✓ ' : ''}
                       {task.targetCount === null ? count : `${count} / ${task.targetCount}`}
